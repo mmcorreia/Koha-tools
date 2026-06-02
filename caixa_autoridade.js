@@ -2,13 +2,14 @@
    Authority BOX / OPAC
    Miguel Mimoso Correia CC-BY-NC-SA
    Infobox de autores com Wikidata e Wikipédia.
+
    ========================================================== */
 
 (function () {
   'use strict';
 
   const CONFIG = {
-    version: '1.2',
+    version: '1.2.1',
     maxAutoridades: 12,
     titulo: 'Autor(es)',
     notaFinal: 'Fontes: Wikidata e Wikipédia. Informação de origem externa.',
@@ -89,9 +90,13 @@
   const cacheLabels = new Map();
   const cacheWikipedia = new Map();
 
-  document.addEventListener('DOMContentLoaded', function () {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function () {
+      setTimeout(initAuthorityBox, 900);
+    });
+  } else {
     setTimeout(initAuthorityBox, 900);
-  });
+  }
 
   async function initAuthorityBox() {
     if (!location.href.includes('opac-detail.pl')) return;
@@ -583,13 +588,14 @@
         const texto = limparTexto(a.textContent);
         const authid = extrairAuthId(a.href);
 
-        if (!texto || !authid) return;
+        if (!texto) return;
 
         autores.push({
           nome: limparNomeAutor(texto),
           nomeOriginal: texto,
           href: a.href,
           authid: authid,
+          uid: authid || criarUidAutor(texto, a.href),
           labelLinha: label,
           papeis: extrairPapeisDoTexto(texto, label)
         });
@@ -605,7 +611,7 @@
         const texto = limparTexto(a.textContent);
         const authid = extrairAuthId(a.href);
 
-        if (!texto || !authid) return;
+        if (!texto) return;
 
         const contexto = obterContextoDoLink(a);
         const label = obterLabelDoLink(a, contexto);
@@ -619,6 +625,7 @@
             nomeOriginal: texto,
             href: a.href,
             authid: authid,
+            uid: authid || criarUidAutor(texto, a.href),
             labelLinha: label || inferirLabelResponsabilidade(contexto, texto),
             papeis: extrairPapeisDoTexto(texto, label)
           });
@@ -628,13 +635,26 @@
 
     return autores
       .filter(function (a) {
-        return a.nome && a.authid;
+        return a.nome;
       })
       .filter(function (a, i, arr) {
         return arr.findIndex(function (b) {
-          return b.authid === a.authid;
+          return (b.uid || b.authid || b.nome) === (a.uid || a.authid || a.nome);
         }) === i;
       });
+  }
+
+
+  function criarUidAutor(texto, href) {
+    return normalizarTexto(texto) + '|' + limparTexto(href).slice(0, 180);
+  }
+
+  function safeDecodeURIComponent(value) {
+    try {
+      return decodeURIComponent(String(value || ''));
+    } catch (e) {
+      return String(value || '');
+    }
   }
 
   function obterContextoDoLink(link) {
@@ -765,20 +785,36 @@
   }
 
   function extrairAuthId(url) {
-    try {
-      const u = new URL(url, location.origin);
-      const authid = u.searchParams.get('authid') || u.searchParams.get('q');
+    const raw = String(url || '');
 
+    try {
+      const u = new URL(raw, location.origin);
+      const authid = u.searchParams.get('authid');
       if (isValidAuthid(authid)) return authid;
 
       const q = u.searchParams.get('q') || '';
-      const m = q.match(/(?:an:)?(\d+)/i);
-      return m && isValidAuthid(m[1]) ? m[1] : null;
+      const idx = u.searchParams.get('idx') || '';
+
+      const candidatos = [
+        q,
+        decodeURIComponent(q),
+        idx + ':' + q,
+        raw,
+        decodeURIComponent(raw)
+      ];
+
+      for (const candidato of candidatos) {
+        const m = String(candidato || '').match(/(?:^|[^a-z0-9])(?:an|authid)[:=]?(\d{1,12})(?:\D|$)/i) ||
+          String(candidato || '').match(/[?&]authid=(\d{1,12})/i);
+        if (m && isValidAuthid(m[1])) return m[1];
+      }
+
+      return null;
     } catch (e) {
+      const decoded = safeDecodeURIComponent(raw);
       const m =
-        String(url || '').match(/[?&]authid=(\d+)/i) ||
-        String(url || '').match(/[?&]q=(\d+)/i) ||
-        String(url || '').match(/an:(\d+)/i);
+        decoded.match(/[?&]authid=(\d{1,12})/i) ||
+        decoded.match(/(?:^|[^a-z0-9])an[:=]?(\d{1,12})(?:\D|$)/i);
 
       return m && isValidAuthid(m[1]) ? m[1] : null;
     }
