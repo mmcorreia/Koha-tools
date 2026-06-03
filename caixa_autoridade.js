@@ -8,7 +8,7 @@
   'use strict';
 
   const CONFIG = {
-    version: '1.1',
+    version: '1.1.1',
     maxAutoridades: 12,
     maxVisiveis: 3,
     titulo: 'Autor(es)',
@@ -62,14 +62,23 @@
     ]
   };
 
+  if (window.__authorityBoxRbmoLoaded) return;
+  window.__authorityBoxRbmoLoaded = true;
+
   const cacheQID = new Map();
   const cacheWikidata = new Map();
   const cacheLabels = new Map();
   const cacheWikipedia = new Map();
 
-  document.addEventListener('DOMContentLoaded', function () {
+  function arrancarAuthorityBox() {
     setTimeout(initAutoridataBox, 900);
-  });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', arrancarAuthorityBox, { once: true });
+  } else {
+    arrancarAuthorityBox();
+  }
 
   async function initAutoridataBox() {
     if (!location.href.includes('opac-detail.pl')) return;
