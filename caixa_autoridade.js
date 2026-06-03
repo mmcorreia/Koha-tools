@@ -2,14 +2,13 @@
    Authority BOX / OPAC
    Miguel Mimoso Correia CC-BY-NC-SA
    Infobox de autores com Wikidata e Wikipédia.
-
    ========================================================== */
 
 (function () {
   'use strict';
 
   const CONFIG = {
-    version: '1.2.1',
+    version: '1.2.2',
     maxAutoridades: 12,
     titulo: 'Autor(es)',
     notaFinal: 'Fontes: Wikidata e Wikipédia. Informação de origem externa.',
@@ -101,17 +100,24 @@
   async function initAuthorityBox() {
     if (!location.href.includes('opac-detail.pl')) return;
 
+    const content = criarCaixa();
+    if (!content) return;
+
     const autores = recolherAutores()
       .slice(0, CONFIG.maxAutoridades);
 
-    if (!autores.length) return;
-
-    const content = criarCaixa();
-    if (!content) return;
+    if (!autores.length) {
+      content.textContent = '';
+      content.appendChild(criarMensagemVazia('Nenhuma responsabilidade autoral detetada nesta página.'));
+      atualizarContador();
+      console.warn('AuthorityBox: caixa criada, mas nenhum autor foi detetado. Verificar seletores do OPAC Koha.');
+      return;
+    }
 
     const autoresPreparados = await prepararAutores(autores);
 
     if (!autoresPreparados.length) {
+      content.textContent = '';
       content.appendChild(criarMensagemVazia(CONFIG.mensagemSemQID));
       atualizarContador();
       return;
@@ -582,7 +588,7 @@
       const label = mapearLabel(celulas[0].textContent);
       if (!CONFIG.camposValidos.includes(label)) return;
 
-      const links = Array.from(celulas[1].querySelectorAll('a[href*="opac-search.pl"][href*="q="]'));
+      const links = Array.from(obterLinksCandidatos(celulas[1]));
 
       links.forEach(function (a) {
         const texto = limparTexto(a.textContent);
@@ -604,7 +610,7 @@
 
     if (!autores.length) {
       const links = Array.from(
-        document.querySelectorAll('a[href*="opac-search.pl"][href*="q="]')
+        obterLinksCandidatos(document)
       );
 
       links.forEach(function (a) {
@@ -642,6 +648,37 @@
           return (b.uid || b.authid || b.nome) === (a.uid || a.authid || a.nome);
         }) === i;
       });
+  }
+
+
+  function obterLinksCandidatos(root) {
+    const origem = root || document;
+    const seletores = [
+      'a[href*="opac-search.pl"]',
+      'a[href*="opac-authoritiesdetail.pl"]',
+      'a[href*="authid="]',
+      'a[href*="an:"]',
+      'a[href*="idx=an"]',
+      'a[href*="q=an"]'
+    ];
+
+    const links = [];
+
+    seletores.forEach(function (selector) {
+      Array.from(origem.querySelectorAll(selector)).forEach(function (a) {
+        if (!links.includes(a)) links.push(a);
+      });
+    });
+
+    return links.filter(function (a) {
+      const texto = limparTexto(a.textContent);
+      const href = limparTexto(a.getAttribute('href') || '');
+
+      if (!texto || !href) return false;
+      if (/^(ver|pesquisar|mais|ler mais)$/i.test(texto)) return false;
+
+      return true;
+    });
   }
 
 
