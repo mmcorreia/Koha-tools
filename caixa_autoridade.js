@@ -1,4 +1,4 @@
-//* ========================================================== 
+/* ========================================================== 
    Authority BOX / OPAC
    Miguel Mimoso Correia CC-BY-NC-SA
    Infobox de autores com Wikidata e Wikipédia.
