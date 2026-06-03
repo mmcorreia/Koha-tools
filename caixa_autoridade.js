@@ -8,7 +8,7 @@
   'use strict';
 
   const CONFIG = {
-    version: '1.2.2',
+    version: '1.2.3',
     maxAutoridades: 12,
     titulo: 'Autor(es)',
     notaFinal: 'Fontes: Wikidata e Wikipédia. Informação de origem externa.',
@@ -832,17 +832,30 @@
       const q = u.searchParams.get('q') || '';
       const idx = u.searchParams.get('idx') || '';
 
+      // Forma observada no OPAC Koha do utilizador:
+      // /cgi-bin/koha/opac-search.pl?idx=an,ext&q=1055
+      // Neste caso o authid é o valor numérico de q, porque idx indica pesquisa por autoridade.
+      if (isIndiceAutoridade(idx) && isValidAuthid(q)) return q;
+
+      const decodedQ = safeDecodeURIComponent(q);
+      if (isIndiceAutoridade(idx) && isValidAuthid(decodedQ)) return decodedQ;
+
       const candidatos = [
         q,
-        decodeURIComponent(q),
+        decodedQ,
         idx + ':' + q,
         raw,
-        decodeURIComponent(raw)
+        safeDecodeURIComponent(raw)
       ];
 
       for (const candidato of candidatos) {
-        const m = String(candidato || '').match(/(?:^|[^a-z0-9])(?:an|authid)[:=]?(\d{1,12})(?:\D|$)/i) ||
-          String(candidato || '').match(/[?&]authid=(\d{1,12})/i);
+        const txt = String(candidato || '');
+        const m =
+          txt.match(/[?&]authid=(\d{1,12})/i) ||
+          txt.match(/[?&]q=(\d{1,12})(?:\D|$)/i) ||
+          txt.match(/(?:^|[^a-z0-9])authid[:=]?(\d{1,12})(?:\D|$)/i) ||
+          txt.match(/(?:^|[^a-z0-9])an(?:,[a-z]+)*[:=]?(\d{1,12})(?:\D|$)/i);
+
         if (m && isValidAuthid(m[1])) return m[1];
       }
 
@@ -851,10 +864,15 @@
       const decoded = safeDecodeURIComponent(raw);
       const m =
         decoded.match(/[?&]authid=(\d{1,12})/i) ||
-        decoded.match(/(?:^|[^a-z0-9])an[:=]?(\d{1,12})(?:\D|$)/i);
+        decoded.match(/[?&]idx=an[^&]*&q=(\d{1,12})/i) ||
+        decoded.match(/(?:^|[^a-z0-9])an(?:,[a-z]+)*[:=]?(\d{1,12})(?:\D|$)/i);
 
       return m && isValidAuthid(m[1]) ? m[1] : null;
     }
+  }
+
+  function isIndiceAutoridade(idx) {
+    return /(^|[^a-z])an([^a-z]|$)/i.test(String(idx || ''));
   }
 
   async function obterQID(authid) {
@@ -1255,19 +1273,66 @@
     aside.appendChild(content);
     aside.appendChild(source);
 
-    const alvo =
-      document.querySelector('#action') ||
-      document.querySelector('.actions-menu') ||
-      document.querySelector('#opac-detail-sidebar') ||
-      document.querySelector('.col-lg-3') ||
-      document.querySelector('.col-md-3') ||
-      document.querySelector('#bibliodescriptions') ||
-      document.querySelector('#catalogue_detail_biblio') ||
-      document.body;
+    const posicao = escolherPosicaoCaixa();
 
-    alvo.insertBefore(aside, alvo.firstChild);
+    if (posicao && posicao.parent && posicao.ref) {
+      posicao.parent.insertBefore(aside, posicao.ref);
+    } else if (posicao && posicao.parent) {
+      posicao.parent.insertBefore(aside, posicao.parent.firstChild);
+    } else {
+      document.body.insertBefore(aside, document.body.firstChild);
+    }
 
     return content;
+  }
+
+  function escolherPosicaoCaixa() {
+    // Preferir colocar a caixa junto das responsabilidades autorais reais.
+    // Isto evita inserir a caixa em zonas laterais ou blocos ocultos do Koha, como #action.
+    const summaries = Array.from(document.querySelectorAll('.results_summary'));
+
+    for (const summary of summaries) {
+      const labelEl = summary.querySelector('.label');
+      const label = labelEl ? mapearLabel(labelEl.textContent) : '';
+
+      if (CONFIG.camposValidos.includes(label) && summary.parentElement) {
+        return {
+          parent: summary.parentElement,
+          ref: summary
+        };
+      }
+    }
+
+    const candidatos = [
+      '#catalogue_detail_biblio',
+      '#bibliodescriptions',
+      '#opac-detail',
+      'main',
+      '#content',
+      '.maincontent',
+      '#opac-main-search',
+      '#opac-detail-sidebar',
+      '.col-lg-3',
+      '.col-md-3',
+      '.actions-menu',
+      '#action'
+    ];
+
+    for (const selector of candidatos) {
+      const el = document.querySelector(selector);
+      if (el && estaVisivelOuTemDimensao(el)) {
+        return { parent: el, ref: el.firstChild };
+      }
+    }
+
+    return { parent: document.body, ref: document.body.firstChild };
+  }
+
+  function estaVisivelOuTemDimensao(el) {
+    if (!el) return false;
+    const style = window.getComputedStyle ? window.getComputedStyle(el) : null;
+    if (style && (style.display === 'none' || style.visibility === 'hidden')) return false;
+    return true;
   }
 
   function criarMensagemVazia(texto) {
