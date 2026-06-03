@@ -8,7 +8,7 @@
   'use strict';
 
   const CONFIG = {
-    version: '1.2.3',
+    version: '1.2',
     maxAutoridades: 12,
     titulo: 'Autor(es)',
     notaFinal: 'Fontes: Wikidata e Wikipédia. Informação de origem externa.',
@@ -89,35 +89,24 @@
   const cacheLabels = new Map();
   const cacheWikipedia = new Map();
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function () {
-      setTimeout(initAuthorityBox, 900);
-    });
-  } else {
+  document.addEventListener('DOMContentLoaded', function () {
     setTimeout(initAuthorityBox, 900);
-  }
+  });
 
   async function initAuthorityBox() {
     if (!location.href.includes('opac-detail.pl')) return;
 
-    const content = criarCaixa();
-    if (!content) return;
-
     const autores = recolherAutores()
       .slice(0, CONFIG.maxAutoridades);
 
-    if (!autores.length) {
-      content.textContent = '';
-      content.appendChild(criarMensagemVazia('Nenhuma responsabilidade autoral detetada nesta página.'));
-      atualizarContador();
-      console.warn('AuthorityBox: caixa criada, mas nenhum autor foi detetado. Verificar seletores do OPAC Koha.');
-      return;
-    }
+    if (!autores.length) return;
+
+    const content = criarCaixa();
+    if (!content) return;
 
     const autoresPreparados = await prepararAutores(autores);
 
     if (!autoresPreparados.length) {
-      content.textContent = '';
       content.appendChild(criarMensagemVazia(CONFIG.mensagemSemQID));
       atualizarContador();
       return;
@@ -588,20 +577,19 @@
       const label = mapearLabel(celulas[0].textContent);
       if (!CONFIG.camposValidos.includes(label)) return;
 
-      const links = Array.from(obterLinksCandidatos(celulas[1]));
+      const links = Array.from(celulas[1].querySelectorAll('a[href*="opac-search.pl"][href*="q="]'));
 
       links.forEach(function (a) {
         const texto = limparTexto(a.textContent);
         const authid = extrairAuthId(a.href);
 
-        if (!texto) return;
+        if (!texto || !authid) return;
 
         autores.push({
           nome: limparNomeAutor(texto),
           nomeOriginal: texto,
           href: a.href,
           authid: authid,
-          uid: authid || criarUidAutor(texto, a.href),
           labelLinha: label,
           papeis: extrairPapeisDoTexto(texto, label)
         });
@@ -610,14 +598,14 @@
 
     if (!autores.length) {
       const links = Array.from(
-        obterLinksCandidatos(document)
+        document.querySelectorAll('a[href*="opac-search.pl"][href*="q="]')
       );
 
       links.forEach(function (a) {
         const texto = limparTexto(a.textContent);
         const authid = extrairAuthId(a.href);
 
-        if (!texto) return;
+        if (!texto || !authid) return;
 
         const contexto = obterContextoDoLink(a);
         const label = obterLabelDoLink(a, contexto);
@@ -631,7 +619,6 @@
             nomeOriginal: texto,
             href: a.href,
             authid: authid,
-            uid: authid || criarUidAutor(texto, a.href),
             labelLinha: label || inferirLabelResponsabilidade(contexto, texto),
             papeis: extrairPapeisDoTexto(texto, label)
           });
@@ -641,57 +628,13 @@
 
     return autores
       .filter(function (a) {
-        return a.nome;
+        return a.nome && a.authid;
       })
       .filter(function (a, i, arr) {
         return arr.findIndex(function (b) {
-          return (b.uid || b.authid || b.nome) === (a.uid || a.authid || a.nome);
+          return b.authid === a.authid;
         }) === i;
       });
-  }
-
-
-  function obterLinksCandidatos(root) {
-    const origem = root || document;
-    const seletores = [
-      'a[href*="opac-search.pl"]',
-      'a[href*="opac-authoritiesdetail.pl"]',
-      'a[href*="authid="]',
-      'a[href*="an:"]',
-      'a[href*="idx=an"]',
-      'a[href*="q=an"]'
-    ];
-
-    const links = [];
-
-    seletores.forEach(function (selector) {
-      Array.from(origem.querySelectorAll(selector)).forEach(function (a) {
-        if (!links.includes(a)) links.push(a);
-      });
-    });
-
-    return links.filter(function (a) {
-      const texto = limparTexto(a.textContent);
-      const href = limparTexto(a.getAttribute('href') || '');
-
-      if (!texto || !href) return false;
-      if (/^(ver|pesquisar|mais|ler mais)$/i.test(texto)) return false;
-
-      return true;
-    });
-  }
-
-
-  function criarUidAutor(texto, href) {
-    return normalizarTexto(texto) + '|' + limparTexto(href).slice(0, 180);
-  }
-
-  function safeDecodeURIComponent(value) {
-    try {
-      return decodeURIComponent(String(value || ''));
-    } catch (e) {
-      return String(value || '');
-    }
   }
 
   function obterContextoDoLink(link) {
@@ -822,57 +765,23 @@
   }
 
   function extrairAuthId(url) {
-    const raw = String(url || '');
-
     try {
-      const u = new URL(raw, location.origin);
-      const authid = u.searchParams.get('authid');
+      const u = new URL(url, location.origin);
+      const authid = u.searchParams.get('authid') || u.searchParams.get('q');
+
       if (isValidAuthid(authid)) return authid;
 
       const q = u.searchParams.get('q') || '';
-      const idx = u.searchParams.get('idx') || '';
-
-      // Forma observada no OPAC Koha do utilizador:
-      // /cgi-bin/koha/opac-search.pl?idx=an,ext&q=1055
-      // Neste caso o authid é o valor numérico de q, porque idx indica pesquisa por autoridade.
-      if (isIndiceAutoridade(idx) && isValidAuthid(q)) return q;
-
-      const decodedQ = safeDecodeURIComponent(q);
-      if (isIndiceAutoridade(idx) && isValidAuthid(decodedQ)) return decodedQ;
-
-      const candidatos = [
-        q,
-        decodedQ,
-        idx + ':' + q,
-        raw,
-        safeDecodeURIComponent(raw)
-      ];
-
-      for (const candidato of candidatos) {
-        const txt = String(candidato || '');
-        const m =
-          txt.match(/[?&]authid=(\d{1,12})/i) ||
-          txt.match(/[?&]q=(\d{1,12})(?:\D|$)/i) ||
-          txt.match(/(?:^|[^a-z0-9])authid[:=]?(\d{1,12})(?:\D|$)/i) ||
-          txt.match(/(?:^|[^a-z0-9])an(?:,[a-z]+)*[:=]?(\d{1,12})(?:\D|$)/i);
-
-        if (m && isValidAuthid(m[1])) return m[1];
-      }
-
-      return null;
+      const m = q.match(/(?:an:)?(\d+)/i);
+      return m && isValidAuthid(m[1]) ? m[1] : null;
     } catch (e) {
-      const decoded = safeDecodeURIComponent(raw);
       const m =
-        decoded.match(/[?&]authid=(\d{1,12})/i) ||
-        decoded.match(/[?&]idx=an[^&]*&q=(\d{1,12})/i) ||
-        decoded.match(/(?:^|[^a-z0-9])an(?:,[a-z]+)*[:=]?(\d{1,12})(?:\D|$)/i);
+        String(url || '').match(/[?&]authid=(\d+)/i) ||
+        String(url || '').match(/[?&]q=(\d+)/i) ||
+        String(url || '').match(/an:(\d+)/i);
 
       return m && isValidAuthid(m[1]) ? m[1] : null;
     }
-  }
-
-  function isIndiceAutoridade(idx) {
-    return /(^|[^a-z])an([^a-z]|$)/i.test(String(idx || ''));
   }
 
   async function obterQID(authid) {
@@ -1273,66 +1182,19 @@
     aside.appendChild(content);
     aside.appendChild(source);
 
-    const posicao = escolherPosicaoCaixa();
+    const alvo =
+      document.querySelector('#action') ||
+      document.querySelector('.actions-menu') ||
+      document.querySelector('#opac-detail-sidebar') ||
+      document.querySelector('.col-lg-3') ||
+      document.querySelector('.col-md-3') ||
+      document.querySelector('#bibliodescriptions') ||
+      document.querySelector('#catalogue_detail_biblio') ||
+      document.body;
 
-    if (posicao && posicao.parent && posicao.ref) {
-      posicao.parent.insertBefore(aside, posicao.ref);
-    } else if (posicao && posicao.parent) {
-      posicao.parent.insertBefore(aside, posicao.parent.firstChild);
-    } else {
-      document.body.insertBefore(aside, document.body.firstChild);
-    }
+    alvo.insertBefore(aside, alvo.firstChild);
 
     return content;
-  }
-
-  function escolherPosicaoCaixa() {
-    // Preferir colocar a caixa junto das responsabilidades autorais reais.
-    // Isto evita inserir a caixa em zonas laterais ou blocos ocultos do Koha, como #action.
-    const summaries = Array.from(document.querySelectorAll('.results_summary'));
-
-    for (const summary of summaries) {
-      const labelEl = summary.querySelector('.label');
-      const label = labelEl ? mapearLabel(labelEl.textContent) : '';
-
-      if (CONFIG.camposValidos.includes(label) && summary.parentElement) {
-        return {
-          parent: summary.parentElement,
-          ref: summary
-        };
-      }
-    }
-
-    const candidatos = [
-      '#catalogue_detail_biblio',
-      '#bibliodescriptions',
-      '#opac-detail',
-      'main',
-      '#content',
-      '.maincontent',
-      '#opac-main-search',
-      '#opac-detail-sidebar',
-      '.col-lg-3',
-      '.col-md-3',
-      '.actions-menu',
-      '#action'
-    ];
-
-    for (const selector of candidatos) {
-      const el = document.querySelector(selector);
-      if (el && estaVisivelOuTemDimensao(el)) {
-        return { parent: el, ref: el.firstChild };
-      }
-    }
-
-    return { parent: document.body, ref: document.body.firstChild };
-  }
-
-  function estaVisivelOuTemDimensao(el) {
-    if (!el) return false;
-    const style = window.getComputedStyle ? window.getComputedStyle(el) : null;
-    if (style && (style.display === 'none' || style.visibility === 'hidden')) return false;
-    return true;
   }
 
   function criarMensagemVazia(texto) {
