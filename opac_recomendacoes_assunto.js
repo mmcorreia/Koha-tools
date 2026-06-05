@@ -3,19 +3,15 @@
    PT/EN automático conforme idioma ativo do OPAC
    Miguel Mimoso Correia CC-BY-NC-SA
 
-   Versão com relevância, diversidade e rotação controlada, sem lista fixa de termos genéricos.
-
-   Regras:
-   1. Usa sempre primeiro o campo 606.
-   2. Se o 606 não existir, usa o campo 600.
-   3. Lê MARC público sempre que possível.
-   4. Usa $a e $x como motores principais de recomendação.
-   5. Usa $y, $z e $j apenas como refinamento combinado.
-   6. Não usa lista manual de termos genéricos.
-   7. Valoriza registos encontrados por mais do que uma pesquisa.
-   8. Evita concentração excessiva no mesmo autor.
-   9. Mantém rotação controlada apenas como desempate.
-   10. Os assuntos são usados internamente, mas não são mostrados ao leitor.
+   Versão otimizada:
+   1. Mais rápida, reduz número de pesquisas ao OPAC.
+   2. Evita depender de lista fixa de termos genéricos.
+   3. Usa 606 antes de 600.
+   4. Usa $a e $x como motores principais.
+   5. Usa $y, $z e $j apenas combinados com $a ou $x.
+   6. Aplica rotação por offset para não mostrar sempre os mesmos primeiros resultados.
+   7. Agrega resultados repetidos e aplica diversidade por autor e título.
+   8. Não mostra ao leitor os assuntos usados internamente.
    ===============================================================================================================================  */
 
 $(document).ready(function () {
@@ -70,9 +66,9 @@ $(document).ready(function () {
     var T = TEXTOS[IDIOMA] || TEXTOS.pt;
 
     var CONFIG = {
-        maxCamposMARC: 6,
-        maxSementesPesquisa: 8,
-        maxResultadosPorPesquisa: 40,
+        maxCamposMARC: 5,
+        maxSementesPesquisa: 4,
+        maxResultadosPorPesquisa: 18,
         maxSugestoes: 12,
         larguraCartao: 159,
 
@@ -88,14 +84,17 @@ $(document).ready(function () {
             j: 1
         },
 
-        pesoCombinacao: 3,
+        pesoCombinacao: 2,
         bonusOcorrenciaMultipla: 3,
         maxBonusOcorrencias: 9,
+
         maxPorAutor: 2,
         maxPorTituloNormalizado: 1,
 
-        aleatoriedadeControlada: 0.5,
+        offsetsRotativos: [0, 18, 36, 54],
+        aleatoriedadeControlada: 0.35,
 
+        timeoutPesquisaMs: 6500,
         debug: false
     };
 
@@ -486,39 +485,42 @@ $(document).ready(function () {
             return $.Deferred().resolve(obterAssuntosVisiveisFallback()).promise();
         }
 
-        return $.get(url)
-            .then(function (html) {
-                var grupos606 = extrairGruposCampoDeHtml(html, '606');
+        return $.get({
+            url: url,
+            timeout: CONFIG.timeoutPesquisaMs
+        })
+        .then(function (html) {
+            var grupos606 = extrairGruposCampoDeHtml(html, '606');
 
-                if (!grupos606.length) {
-                    grupos606 = extrairGruposCampoDeTexto(html, '606');
-                }
+            if (!grupos606.length) {
+                grupos606 = extrairGruposCampoDeTexto(html, '606');
+            }
 
-                if (grupos606.length) {
-                    return {
-                        campo: '606',
-                        grupos: grupos606
-                    };
-                }
+            if (grupos606.length) {
+                return {
+                    campo: '606',
+                    grupos: grupos606
+                };
+            }
 
-                var grupos600 = extrairGruposCampoDeHtml(html, '600');
+            var grupos600 = extrairGruposCampoDeHtml(html, '600');
 
-                if (!grupos600.length) {
-                    grupos600 = extrairGruposCampoDeTexto(html, '600');
-                }
+            if (!grupos600.length) {
+                grupos600 = extrairGruposCampoDeTexto(html, '600');
+            }
 
-                if (grupos600.length) {
-                    return {
-                        campo: '600',
-                        grupos: grupos600
-                    };
-                }
+            if (grupos600.length) {
+                return {
+                    campo: '600',
+                    grupos: grupos600
+                };
+            }
 
-                return obterAssuntosVisiveisFallback();
-            })
-            .catch(function () {
-                return obterAssuntosVisiveisFallback();
-            });
+            return obterAssuntosVisiveisFallback();
+        })
+        .catch(function () {
+            return obterAssuntosVisiveisFallback();
+        });
     }
 
     function criarSemente(termo, peso, origem, tipo) {
@@ -553,8 +555,8 @@ $(document).ready(function () {
                 ));
             });
 
-            principais.forEach(function (principal) {
-                refinamentos.forEach(function (ref) {
+            principais.slice(0, 2).forEach(function (principal) {
+                refinamentos.slice(0, 2).forEach(function (ref) {
                     sementes.push(criarSemente(
                         principal.termo + ' ' + ref.termo,
                         principal.peso + ref.peso + CONFIG.pesoCombinacao,
@@ -565,27 +567,21 @@ $(document).ready(function () {
             });
 
             if (principais.length >= 2) {
-                for (var i = 0; i < principais.length; i++) {
-                    for (var j = i + 1; j < principais.length; j++) {
-                        sementes.push(criarSemente(
-                            principais[i].termo + ' ' + principais[j].termo,
-                            principais[i].peso + principais[j].peso + CONFIG.pesoCombinacao,
-                            grupo.campo + '$' + principais[i].subcampo + '+$' + principais[j].subcampo,
-                            'combinada-principal'
-                        ));
-                    }
-                }
+                sementes.push(criarSemente(
+                    principais[0].termo + ' ' + principais[1].termo,
+                    principais[0].peso + principais[1].peso + CONFIG.pesoCombinacao,
+                    grupo.campo + '$' + principais[0].subcampo + '+$' + principais[1].subcampo,
+                    'combinada-principal'
+                ));
             }
 
             if (!principais.length && refinamentos.length) {
-                refinamentos.forEach(function (ref) {
-                    sementes.push(criarSemente(
-                        ref.termo,
-                        Math.max(0.5, ref.peso * 0.5),
-                        grupo.campo + '$' + ref.subcampo,
-                        'fallback-refinamento'
-                    ));
-                });
+                sementes.push(criarSemente(
+                    refinamentos[0].termo,
+                    Math.max(0.5, refinamentos[0].peso * 0.5),
+                    grupo.campo + '$' + refinamentos[0].subcampo,
+                    'fallback-refinamento'
+                ));
             }
         });
 
@@ -613,6 +609,20 @@ $(document).ready(function () {
         });
 
         return sementes.slice(0, CONFIG.maxSementesPesquisa);
+    }
+
+    function obterOffsetRotativo(semente, indice) {
+        var biblionumber = obterBiblionumberAtual();
+        var chave = 'rbmo_sug_offset_' + biblionumber + '_' + normalizarChave(semente.termo);
+        var atual = parseInt(sessionStorage.getItem(chave) || '-1', 10);
+
+        if (isNaN(atual)) atual = -1;
+
+        var proximo = (atual + 1 + indice) % CONFIG.offsetsRotativos.length;
+
+        sessionStorage.setItem(chave, String(proximo));
+
+        return CONFIG.offsetsRotativos[proximo];
     }
 
     function criarUrlDetalhe(url) {
@@ -650,11 +660,15 @@ $(document).ready(function () {
         );
     }
 
-    function criarPesquisaPorSemente(semente) {
+    function criarPesquisaPorSemente(semente, indice) {
+        var offset = obterOffsetRotativo(semente, indice);
+
         return '/cgi-bin/koha/opac-search.pl?idx=su&q=' +
             encodeURIComponent(semente.termo) +
             '&count=' +
-            encodeURIComponent(CONFIG.maxResultadosPorPesquisa);
+            encodeURIComponent(CONFIG.maxResultadosPorPesquisa) +
+            '&offset=' +
+            encodeURIComponent(offset);
     }
 
     function extrairResultados(htmlPesquisa, semente) {
@@ -686,7 +700,7 @@ $(document).ready(function () {
 
             var pontosPorPosicao = Math.max(
                 0,
-                (CONFIG.maxResultadosPorPesquisa - posicao) / 10
+                (CONFIG.maxResultadosPorPesquisa - posicao) / 8
             );
 
             resultados.push({
@@ -824,8 +838,11 @@ $(document).ready(function () {
                 return;
             }
 
-            var pedidos = sementes.map(function (semente) {
-                return $.get(criarPesquisaPorSemente(semente));
+            var pedidos = sementes.map(function (semente, indice) {
+                return $.get({
+                    url: criarPesquisaPorSemente(semente, indice),
+                    timeout: CONFIG.timeoutPesquisaMs
+                });
             });
 
             $.when.apply($, pedidos).done(function () {
