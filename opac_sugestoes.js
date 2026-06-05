@@ -16,6 +16,22 @@
 $(document).ready(function () {
 
     if (!window.location.href.includes('/cgi-bin/koha/opac-detail.pl')) return;
+
+    /*
+       Proteção contra versões antigas ou duplicadas do script.
+       Remove a linha "Assunto relacionado" caso ainda exista no HTML.
+    */
+    $('#rbmo-assunto-termos').remove();
+
+    $('#rbmo-podera-gostar-assunto')
+        .find('div')
+        .filter(function () {
+            var texto = $(this).text().trim().toLowerCase();
+            return texto.indexOf('assunto relacionado:') === 0 ||
+                   texto.indexOf('related subject:') === 0;
+        })
+        .remove();
+
     if ($('#rbmo-podera-gostar-assunto').length) return;
 
     function obterIdiomaOPAC() {
@@ -575,3 +591,45 @@ $(document).ready(function () {
     carregarSugestoes();
 
 });
+
+
+/*  ===============================================================================================================================
+    PROTEÇÃO FINAL
+    Remove "Assunto relacionado" caso seja recriado por cache, duplicação de código ou outro script ativo no OPAC.
+    =============================================================================================================================== */
+
+(function () {
+
+    function removerAssuntoRelacionado() {
+        $('#rbmo-assunto-termos').remove();
+
+        $('#rbmo-podera-gostar-assunto')
+            .find('div')
+            .filter(function () {
+                var texto = $(this).text().trim().toLowerCase();
+                return texto.indexOf('assunto relacionado:') === 0 ||
+                       texto.indexOf('related subject:') === 0;
+            })
+            .remove();
+    }
+
+    $(document).ready(function () {
+        removerAssuntoRelacionado();
+
+        setTimeout(removerAssuntoRelacionado, 300);
+        setTimeout(removerAssuntoRelacionado, 1000);
+        setTimeout(removerAssuntoRelacionado, 2000);
+
+        if (!document.body) return;
+
+        var observer = new MutationObserver(function () {
+            removerAssuntoRelacionado();
+        });
+
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+    });
+
+})();
