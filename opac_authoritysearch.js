@@ -1,40 +1,37 @@
 (function () {
     'use strict';
 
-    function init() {
-        console.log('[NOMEN] ficheiro carregado e executado');
+    function rbmoAjustarCabecalhoEmAutoridades() {
+        var isAuthorityPage =
+            window.location.pathname.indexOf('/cgi-bin/koha/opac-authorities-home.pl') !== -1;
 
-        if (window.location.pathname.indexOf('/cgi-bin/koha/opac-authorities-home.pl') === -1) {
-            console.log('[NOMEN] não é página de autoridades');
+        if (!isAuthorityPage) {
             return;
         }
 
-        console.log('[NOMEN] página de autoridades detetada');
+        document.body.classList.add('rbmo-authority-page');
 
-        var target =
-            document.querySelector('#userauthhome') ||
-            document.querySelector('.maincontent') ||
-            document.querySelector('#maincontent') ||
-            document.querySelector('main') ||
-            document.body;
+        var css = `
+            body.rbmo-authority-page #rbmo-custom-header .rbmo-search-area {
+                display: none !important;
+            }
 
-        var box = document.createElement('div');
-        box.style.border = '3px solid #d7df2f';
-        box.style.background = '#ffffff';
-        box.style.padding = '30px';
-        box.style.margin = '30px';
-        box.style.fontSize = '24px';
-        box.style.fontWeight = '700';
-        box.style.color = '#222';
+            body.rbmo-authority-page #opac-main-search {
+                display: none !important;
+            }
+        `;
 
-        box.textContent = 'NOMEN: transformação ativa nesta página';
+        var style = document.createElement('style');
+        style.type = 'text/css';
+        style.appendChild(document.createTextNode(css));
+        document.head.appendChild(style);
 
-        target.parentNode.insertBefore(box, target);
+        console.log('[NOMEN] Pesquisa bibliográfica RBMO escondida na página de autoridades.');
     }
 
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', init);
+        document.addEventListener('DOMContentLoaded', rbmoAjustarCabecalhoEmAutoridades);
     } else {
-        init();
+        rbmoAjustarCabecalhoEmAutoridades();
     }
 })();
