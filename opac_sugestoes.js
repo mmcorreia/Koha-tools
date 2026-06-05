@@ -2,6 +2,7 @@
    RECOMENDAÇÕES POR ASSUNTO
    PT/EN automático conforme idioma ativo do OPAC
    Miguel Mimoso Correia CC-BY-NC-SA
+
    Regras:
    1. Usa sempre primeiro o campo 606.
    2. Se o 606 não existir, usa o campo 600.
@@ -9,7 +10,8 @@
    4. Usa subcampos $a/_a, $x/_x, $y/_y, $z/_z, $j/_j.
    5. Ignora $2/_2 e $9/_9.
    6. A ordem final das sugestões é aleatória.
-    ===============================================================================================================================  */
+   7. Os assuntos são usados internamente, mas não são mostrados ao leitor.
+   ===============================================================================================================================  */
 
 $(document).ready(function () {
 
@@ -30,25 +32,23 @@ $(document).ready(function () {
     var IDIOMA = obterIdiomaOPAC();
 
     var TEXTOS = {
-    pt: {
-        titulo: 'Outras propostas de leitura',
-        carregar: 'A carregar sugestões...',
-        semCapa: 'Sem capa',
-        semAssuntos: 'Não foi possível encontrar assuntos neste registo.',
-        assuntoRelacionado: 'Assunto relacionado: ',
-        semSugestoes: 'Não foram encontradas sugestões relacionadas.',
-        erroCarregar: 'Não foi possível carregar sugestões neste momento.'
-    },
-    en: {
-        titulo: 'Other reading suggestions',
-        carregar: 'Loading suggestions...',
-        semCapa: 'No cover',
-        semAssuntos: 'No subjects could be found in this record.',
-        assuntoRelacionado: 'Related subject: ',
-        semSugestoes: 'No related suggestions were found.',
-        erroCarregar: 'Suggestions could not be loaded at this time.'
-    }
-};
+        pt: {
+            titulo: 'Outras propostas de leitura',
+            carregar: 'A carregar sugestões...',
+            semCapa: 'Sem capa',
+            semAssuntos: 'Não foi possível encontrar propostas de leitura relacionadas.',
+            semSugestoes: 'Não foram encontradas sugestões relacionadas.',
+            erroCarregar: 'Não foi possível carregar sugestões neste momento.'
+        },
+        en: {
+            titulo: 'Other reading suggestions',
+            carregar: 'Loading suggestions...',
+            semCapa: 'No cover',
+            semAssuntos: 'No related reading suggestions could be found.',
+            semSugestoes: 'No related suggestions were found.',
+            erroCarregar: 'Suggestions could not be loaded at this time.'
+        }
+    };
 
     var T = TEXTOS[IDIOMA] || TEXTOS.pt;
 
@@ -106,8 +106,6 @@ $(document).ready(function () {
                     </div>
                 </div>
 
-                <div id="rbmo-assunto-termos" style="font-size:12px; color:#777; margin-bottom:10px;"></div>
-
                 <div id="rbmo-assunto-carousel-wrapper" style="overflow:hidden; width:100%;">
                     <div id="rbmo-assunto-carousel-track" style="display:flex; gap:14px; transition:transform .25s ease;">
                         <div style="font-size:14px; color:#666;">${escapeHtml(T.carregar)}</div>
@@ -146,7 +144,6 @@ $(document).ready(function () {
                 <a href="${escapeHtml(item.url)}" style="text-decoration:none; color:inherit;">
                     <div style="width:110px; height:155px; margin:0 auto 8px auto; display:flex; align-items:center; justify-content:center; background:#f3f3f3; border:1px solid #ddd;">
                         <img src="${escapeHtml(item.capa)}" alt="" style="max-width:100%; max-height:100%;" onerror="this.style.display='none'; this.parentNode.innerHTML='<span style=&quot;font-size:12px;color:#999;text-align:center;padding:8px;&quot;>${escapeHtml(T.semCapa)}</span>';">
-
                     </div>
                     <div style="font-size:13px; line-height:1.25; font-weight:600;">${escapeHtml(item.titulo)}</div>
                     ${item.autor ? `<div style="font-size:12px; color:#666; margin-top:3px; line-height:1.25;">${escapeHtml(item.autor)}</div>` : ''}
@@ -494,13 +491,6 @@ $(document).ready(function () {
                 );
                 return;
             }
-
-            $('#rbmo-assunto-termos').html(
-                escapeHtml(T.assuntoRelacionado) +
-                termos.map(function (t) {
-                    return '<strong>' + escapeHtml(t) + '</strong>';
-                }).join('; ')
-            );
 
             var pedidos = termos.map(function (termo) {
                 return $.get(criarPesquisaPorAssunto(termo));
