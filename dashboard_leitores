@@ -1,0 +1,448 @@
+/* =====================================================================
+   BMO · Dashboard de qualidade dos dados — módulo de Leitores
+   Para injeção em Koha (intranet) via IntranetUserJS.
+   Fonte de dados: REST API do Koha (/api/v1/patrons). Sem SQL.
+   ---------------------------------------------------------------------
+   CONFIG.useDemoData = true  -> mostra valores de demonstração
+   CONFIG.useDemoData = false -> obtém e analisa leitores da REST API
+   ===================================================================== */
+(function () {
+  'use strict';
+
+  var CONFIG = {
+    useDemoData: true,                 // mudar para false em produção
+    apiBase: '/api/v1/patrons',
+    pageSize: 200,
+    maxAgeYears: 100,                  // idade plausível: até 100 anos
+    fields: { freguesia: 'statistics_1', expiry: 'expiry_date' },
+    mount: '#main, #doc3, .main, body' // onde inserir a dashboard
+  };
+
+  /* --- Valores autorizados da categoria "Freguesia" (sort1) --- */
+  var FREGUESIAS = {
+    k: 'ALCOCHETE', f: 'ALGÉS', l: 'ALMADA', m: 'AMADORA', b: 'BARCARENA',
+    n: 'BARREIRO', g: 'CARNAXIDE', o: 'CASCAIS', e: 'CAXIAS', j: 'CRUZQU/DAFUNDO',
+    i: 'LINDA-A-VELHA', p: 'LISBOA', q: 'LOURES', r: 'MAFRA', s: 'MOITA',
+    t: 'MONTIJO', u: 'ODIVELAS', a: 'OEIRAS/SJBARRA', '3': 'OUTRAS', v: 'PALMELA',
+    c: 'PAÇO DE ARCOS', d: 'PORTO SALVO', h: 'QUEIJAS', w: 'SEIXAL', x: 'SESIMBRA',
+    z: 'SETÚBAL', '1': 'SINTRA', '2': 'VILAFRANCAXIR'
+  };
+  var FREG_VALID = Object.keys(FREGUESIAS);
+
+  /* --- Definição das dimensões e indicadores --- */
+  var DIMS = [
+    { t: 'Unicidade', icon: '⧉', inds: [
+      { id: 'dup_nome',  n: 'Duplicados por nome e data nasc.', d: 'apelido + nome próprio + dateofbirth', sev: 'warn' },
+      { id: 'dup_email', n: 'Email partilhado',                 d: 'mesmo email em registos distintos',     sev: 'warn' },
+      { id: 'dup_tel',   n: 'Telefone/telemóvel partilhado',    d: 'mesmo contacto em registos distintos',  sev: 'info' },
+      { id: 'dup_fuzzy', n: 'Possíveis duplicados (aprox.)',    d: 'requer pré-cálculo (SOUNDEX/distância)', sev: 'info' }
+    ]},
+    { t: 'Completude', icon: '▢', inds: [
+      { id: 'sem_contacto', n: 'Sem qualquer contacto',  d: 'sem email, telefone, telemóvel ou morada', sev: 'crit' },
+      { id: 'sem_validade', n: 'Sem data de validade',   d: 'expiry_date por preencher',                sev: 'warn' },
+      { id: 'sem_freguesia',n: 'Freguesia por preencher',d: 'sort1 vazio',                              sev: 'info' }
+    ]},
+    { t: 'Validade e conformidade', icon: '✓', inds: [
+      { id: 'email_mal', n: 'Email malformado',               d: 'sem @, domínio inválido, gralha',     sev: 'crit' },
+      { id: 'tel_inv',   n: 'Telefone inválido',              d: 'comprimento errado ou fictício',      sev: 'warn' },
+      { id: 'cp_inv',    n: 'Código postal fora do padrão',   d: 'não cumpre NNNN-NNN',                 sev: 'warn' },
+      { id: 'dn_inv',    n: 'Data de nascimento implausível', d: 'futura ou idade superior a 100 anos', sev: 'warn' },
+      { id: 'freg_inv',  n: 'Freguesia com código inválido',  d: 'sort1 fora dos valores autorizados',  sev: 'warn' }
+    ]},
+    { t: 'Exatidão', icon: '⚖', inds: [
+      { id: 'idade_cat',  n: 'Idade incoerente com categoria', d: 'requer limites por categoria',  sev: 'warn' },
+      { id: 'placeholder',n: 'Valores de preenchimento',       d: '"teste", "xxx", "asdf"',        sev: 'warn' },
+      { id: 'trocados',   n: 'Campos trocados',                d: 'email no campo de telefone/nome',sev: 'info' }
+    ]},
+    { t: 'Consistência', icon: '≡', inds: [
+      { id: 'caps',    n: 'Capitalização irregular', d: 'tudo maiúsculas ou minúsculas', sev: 'info' },
+      { id: 'espacos', n: 'Espaços supérfluos',      d: 'início, fim ou duplos',         sev: 'info' }
+    ]},
+    { t: 'Atualidade', icon: '⧖', inds: [
+      { id: 'exp_3a',  n: 'Validade expirada há +3 anos', d: 'candidatos a anonimização', sev: 'info' },
+      { id: 'sem_mov', n: 'Sem movimento há +5 anos',     d: 'requer dados de circulação', sev: 'info' },
+      { id: 'exp_30d', n: 'Validade a expirar (30 dias)', d: 'gestão de renovações',       sev: 'info' }
+    ]},
+    { t: 'RGPD', icon: '§', inds: [
+      { id: 'rgpd_ret',  n: 'Dados de inativos retidos',     d: 'inativos +3 anos com dados pessoais', sev: 'crit' },
+      { id: 'rgpd_priv', n: 'Privacidade não definida',      d: 'campo privacy por configurar',        sev: 'info' },
+      { id: 'rgpd_menor',n: 'Menor sem garante associado',   d: 'requer relações de garante',          sev: 'crit' }
+    ]}
+  ];
+
+  /* --- Valores de demonstração --- */
+  var DEMO = {
+    _totais: { total: 18430, ativos: 14980, inativos: 3450, problema: 1984 },
+    dup_nome: 23, dup_email: 47, dup_tel: 31, dup_fuzzy: 58,
+    sem_contacto: 12, sem_validade: 4, sem_freguesia: 340,
+    email_mal: 19, tel_inv: 26, cp_inv: 88, dn_inv: 7, freg_inv: 73,
+    idade_cat: 14, placeholder: 5, trocados: 3,
+    caps: 156, espacos: 64,
+    exp_3a: 612, sem_mov: 880, exp_30d: 73,
+    rgpd_ret: 612, rgpd_priv: 1240, rgpd_menor: 9
+  };
+
+  /* ============ Verificações deterministas ============ */
+  function ageOf(dob) {
+    if (!dob) return null;
+    var d = new Date(dob); if (isNaN(d)) return null;
+    var t = new Date(), a = t.getFullYear() - d.getFullYear();
+    var m = t.getMonth() - d.getMonth();
+    if (m < 0 || (m === 0 && t.getDate() < d.getDate())) a--;
+    return a;
+  }
+  function emailBad(e) {
+    if (!e) return false; e = String(e).trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e)) return true;
+    return /(\.con\b|\.cmo\b|hotmal|gmial|gmai\.|outlok)/i.test(e);
+  }
+  function phoneBad(p) {
+    if (!p) return false;
+    var d = String(p).replace(/[\s\-.()]/g, '').replace(/^\+351/, '');
+    if (!/^\d{9}$/.test(d)) return true;
+    if (/^(\d)\1{8}$/.test(d)) return true;
+    return d === '123456789';
+  }
+  function postalBad(cp) { return cp ? !/^\d{4}-\d{3}$/.test(String(cp).trim()) : false; }
+  function dobBad(dob) {
+    if (!dob) return false;
+    var d = new Date(dob); if (isNaN(d)) return true;
+    if (d > new Date()) return true;
+    var a = ageOf(dob);
+    return a === null || a < 0 || a > CONFIG.maxAgeYears;
+  }
+  function fregBad(v) {
+    if (v == null || v === '') return false;
+    return FREG_VALID.indexOf(String(v).trim()) === -1;
+  }
+  function capsBad(s) {
+    if (!s) return false;
+    var L = String(s).replace(/[^A-Za-zÀ-ÿ]/g, '');
+    if (L.length < 2) return false;
+    return L === L.toUpperCase() || L === L.toLowerCase();
+  }
+  function spaceBad(s) { return s == null ? false : (s !== String(s).trim() || /\s{2,}/.test(s)); }
+  function phBad(s) {
+    if (!s) return false;
+    var t = String(s).trim().toLowerCase();
+    return /^(teste|test|xxx+|asdf|nome|sn|s\/n|\.|-)$/.test(t) || /^(.)\1+$/.test(t.replace(/\s/g, ''));
+  }
+  function isInactive(p) {
+    var ex = p[CONFIG.fields.expiry];
+    return ex ? new Date(ex) < new Date() : false;
+  }
+
+  /* ============ Análise sobre os leitores ============ */
+  function analyze(patrons) {
+    var R = {}, flagged = {};
+    function add(id, p, crit) {
+      if (!R[id]) R[id] = { count: 0, sample: [] };
+      R[id].count++;
+      if (R[id].sample.length < 80) R[id].sample.push(p);
+      if (p && p.patron_id != null) flagged[p.patron_id] = 1;
+    }
+    var byName = {}, byEmail = {}, byPhone = {}, ativos = 0, inativos = 0;
+    var now = new Date();
+    var y3 = new Date(); y3.setFullYear(now.getFullYear() - 3);
+    var in30 = new Date(); in30.setDate(now.getDate() + 30);
+
+    patrons.forEach(function (p) {
+      if (isInactive(p)) inativos++; else ativos++;
+
+      if (!(p.email || p.phone || p.mobile || p.address)) add('sem_contacto', p);
+      if (!p[CONFIG.fields.expiry]) add('sem_validade', p);
+
+      var freg = p[CONFIG.fields.freguesia];
+      if (freg == null || freg === '') add('sem_freguesia', p);
+      else if (fregBad(freg)) add('freg_inv', p);
+
+      if (emailBad(p.email)) add('email_mal', p);
+      if (phoneBad(p.phone) || phoneBad(p.mobile)) add('tel_inv', p);
+      if (postalBad(p.postal_code)) add('cp_inv', p);
+      if (dobBad(p.date_of_birth)) add('dn_inv', p);
+      if (phBad(p.firstname) || phBad(p.surname)) add('placeholder', p);
+      if ((p.phone && /@/.test(p.phone)) || /@/.test(p.surname || '') || /@/.test(p.firstname || '')) add('trocados', p);
+      if (capsBad(p.surname) || capsBad(p.firstname)) add('caps', p);
+      if (spaceBad(p.surname) || spaceBad(p.firstname) || spaceBad(p.email)) add('espacos', p);
+
+      var ex = p[CONFIG.fields.expiry];
+      if (ex) {
+        var de = new Date(ex);
+        if (de < y3) {
+          add('exp_3a', p);
+          if (p.email || p.phone || p.address || p.date_of_birth) add('rgpd_ret', p);
+        }
+        if (de >= now && de <= in30) add('exp_30d', p);
+      }
+      if (p.privacy == null) add('rgpd_priv', p);
+
+      var nk = ((p.surname || '') + '|' + (p.firstname || '') + '|' + (p.date_of_birth || '')).toLowerCase().trim();
+      (byName[nk] || (byName[nk] = [])).push(p);
+      if (p.email) { var ek = p.email.toLowerCase().trim(); (byEmail[ek] || (byEmail[ek] = [])).push(p); }
+      var ph = (p.mobile || p.phone || '').replace(/\D/g, '');
+      if (ph) (byPhone[ph] || (byPhone[ph] = [])).push(p);
+    });
+
+    function dups(map) {
+      var c = 0, g = [];
+      Object.keys(map).forEach(function (k) {
+        if (map[k].length > 1) {
+          c += map[k].length;
+          map[k].forEach(function (p) { if (p.patron_id != null) flagged[p.patron_id] = 1; });
+          if (g.length < 60) g.push({ _group: k, rows: map[k] });
+        }
+      });
+      return { count: c, groups: g };
+    }
+    var dn = dups(byName), dei = dups(byEmail), dpi = dups(byPhone);
+    R.dup_nome = { count: dn.count, groups: dn.groups };
+    R.dup_email = { count: dei.count, groups: dei.groups };
+    R.dup_tel = { count: dpi.count, groups: dpi.groups };
+
+    ['dup_fuzzy', 'idade_cat', 'sem_mov', 'rgpd_menor'].forEach(function (id) {
+      if (!R[id]) R[id] = { count: 0, needs: true };
+    });
+
+    R._totais = { total: patrons.length, ativos: ativos, inativos: inativos, problema: Object.keys(flagged).length };
+    return R;
+  }
+
+  /* ============ Obtenção via REST API (paginada) ============ */
+  function fetchAll(onProgress) {
+    var out = [];
+    function page(p) {
+      var url = CONFIG.apiBase + '?_page=' + p + '&_per_page=' + CONFIG.pageSize;
+      return fetch(url, { headers: { Accept: 'application/json' }, credentials: 'same-origin' })
+        .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); 
+          return r.json().then(function (d) { return { d: d, total: parseInt(r.headers.get('X-Total-Count') || '0', 10) }; }); })
+        .then(function (res) {
+          out = out.concat(res.d);
+          if (onProgress) onProgress(out.length, res.total);
+          if (res.d.length === CONFIG.pageSize && out.length < res.total && p < 500) return page(p + 1);
+          return out;
+        });
+    }
+    return page(1);
+  }
+
+  /* ============ Estilo ============ */
+  function injectCSS() {
+    if (document.getElementById('bmo-dq-css')) return;
+    var css = '' +
+      '#bmo-dq{font-family:inherit;color:#2a2a2a;margin:14px 0 28px}' +
+      '#bmo-dq .hd{display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px}' +
+      '#bmo-dq .hd h2{margin:0;font-size:19px;font-weight:600}' +
+      '#bmo-dq .hd .meta{font-size:12px;color:#6b6b6b;margin-top:2px}' +
+      '#bmo-dq .btn{border:1px solid #c4c4c4;background:#fff;border-radius:4px;padding:6px 11px;font-size:12px;cursor:pointer;color:#333}' +
+      '#bmo-dq .btn:hover{background:#f0f0f0}' +
+      '#bmo-dq .btn.pri{background:#5d7891;border-color:#5d7891;color:#fff}' +
+      '#bmo-dq .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}' +
+      '#bmo-dq .kpi{background:#fff;border:1px solid #e2e2e2;border-radius:6px;padding:11px 13px}' +
+      '#bmo-dq .kpi .k{font-size:11px;color:#6b6b6b;text-transform:uppercase;letter-spacing:.3px}' +
+      '#bmo-dq .kpi .v{font-size:23px;font-weight:600;margin-top:3px;line-height:1.1}' +
+      '#bmo-dq .kpi .s{font-size:11.5px;color:#6b6b6b;margin-top:3px}' +
+      '#bmo-dq .kpi.alert .v{color:#b3261e}' +
+      '#bmo-dq .bar{height:6px;border-radius:4px;background:#eee;margin-top:7px;overflow:hidden}' +
+      '#bmo-dq .bar>i{display:block;height:100%;background:#2f7d32}' +
+      '#bmo-dq .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}' +
+      '#bmo-dq .dim{background:#fff;border:1px solid #e2e2e2;border-radius:6px;overflow:hidden;display:flex;flex-direction:column}' +
+      '#bmo-dq .dim h3{margin:0;padding:9px 11px;font-size:12.5px;font-weight:600;background:#f6f7f8;border-bottom:1px solid #e2e2e2;display:flex;align-items:center;gap:7px}' +
+      '#bmo-dq .dim h3 .dot{width:8px;height:8px;border-radius:50%}' +
+      '#bmo-dq .dim h3 .c{margin-left:auto;font-size:10.5px;color:#888;font-weight:400}' +
+      '#bmo-dq .ind{display:flex;align-items:center;gap:8px;padding:7px 11px;border-bottom:1px solid #f1f1f1;cursor:pointer}' +
+      '#bmo-dq .ind:last-child{border-bottom:0}#bmo-dq .ind:hover{background:#fafcfe}' +
+      '#bmo-dq .ind .s{width:8px;height:8px;border-radius:50%;flex:none}' +
+      '#bmo-dq .ind .n{flex:1;min-width:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+      '#bmo-dq .ind .ct{flex:none;font-weight:700;font-size:11.5px;border-radius:20px;padding:2px 9px}' +
+      '#bmo-dq .ind .nd{flex:none;font-size:10px;color:#999}' +
+      '#bmo-dq .c-crit{background:#fbeaea;color:#b3261e;border:1px solid #eecaca}' +
+      '#bmo-dq .c-warn{background:#fbf2e0;color:#9a5e0a;border:1px solid #ecdcb4}' +
+      '#bmo-dq .c-info{background:#e9f2f9;color:#1f6091;border:1px solid #cfe0ee}' +
+      '#bmo-dq .c-ok{background:#eaf4ea;color:#2f7d32;border:1px solid #cfe5cf}' +
+      '#bmo-dq .x-crit{background:#b3261e}#bmo-dq .x-warn{background:#9a5e0a}#bmo-dq .x-info{background:#1f6091}#bmo-dq .x-ok{background:#2f7d32}' +
+      '#bmo-dq .status{font-size:12px;color:#6b6b6b;margin:8px 0}' +
+      '#bmo-dq-scrim{position:fixed;inset:0;background:rgba(20,30,40,.4);display:none;z-index:1040}' +
+      '#bmo-dq-dr{position:fixed;top:0;right:0;height:100%;width:640px;max-width:94vw;background:#fff;z-index:1050;transform:translateX(100%);transition:transform .2s;display:flex;flex-direction:column;box-shadow:-4px 0 22px rgba(0,0,0,.18)}' +
+      '#bmo-dq-dr.open{transform:translateX(0)}' +
+      '#bmo-dq-dr .h{background:#21394e;color:#fff;padding:13px 18px;display:flex;gap:10px;align-items:flex-start}' +
+      '#bmo-dq-dr .h b{display:block;font-size:15px}#bmo-dq-dr .h span{font-size:12px;opacity:.85}' +
+      '#bmo-dq-dr .h button{margin-left:auto;background:0;border:0;color:#fff;font-size:21px;cursor:pointer;line-height:1}' +
+      '#bmo-dq-dr .b{padding:14px 18px;overflow:auto}' +
+      '#bmo-dq-dr table{width:100%;border-collapse:collapse;font-size:12.5px}' +
+      '#bmo-dq-dr th,#bmo-dq-dr td{text-align:left;padding:6px 8px;border-bottom:1px solid #eee}' +
+      '#bmo-dq-dr th{background:#f6f7f8;font-size:11px;text-transform:uppercase;color:#444}' +
+      '#bmo-dq-dr .gh{background:#eef3f8;font-weight:700;color:#2f5572}' +
+      '@media(max-width:1100px){#bmo-dq .grid,#bmo-dq .kpis{grid-template-columns:repeat(2,1fr)}}' +
+      '@media(max-width:640px){#bmo-dq .grid,#bmo-dq .kpis{grid-template-columns:1fr}}';
+    var s = document.createElement('style'); s.id = 'bmo-dq-css'; s.textContent = css;
+    document.head.appendChild(s);
+  }
+
+  /* ============ Render ============ */
+  var STATE = { R: null };
+  function n(v) { return (v || 0).toLocaleString('pt-PT'); }
+  function worst(inds, R) {
+    var order = ['crit', 'warn', 'info'];
+    for (var i = 0; i < order.length; i++)
+      for (var j = 0; j < inds.length; j++)
+        if (inds[j].sev === order[i] && (R[inds[j].id] ? R[inds[j].id].count : 0) > 0) return order[i];
+    return 'ok';
+  }
+  function critTotal(R) {
+    var c = 0;
+    DIMS.forEach(function (d) { d.inds.forEach(function (i) { if (i.sev === 'crit') c += (R[i.id] ? R[i.id].count : 0); }); });
+    return c;
+  }
+
+  function renderAll() {
+    var R = STATE.R, T = R._totais || {};
+    var conf = T.total ? Math.round((1 - (T.problema || 0) / T.total) * 100) : 0;
+    var kp = '' +
+      kpi('Total de leitores', n(T.total), n(T.ativos) + ' ativos · ' + n(T.inativos) + ' inativos', false) +
+      kpi('Com pelo menos 1 problema', n(T.problema), (T.total ? Math.round((T.problema || 0) / T.total * 1000) / 10 : 0) + '% do total', true) +
+      kpiBar('Taxa de conformidade', conf + '%', conf) +
+      kpi('Situações críticas', n(critTotal(R)), 'exigem ação imediata', true);
+
+    var cards = DIMS.map(function (dim) {
+      var ws = worst(dim.inds, R), tot = 0;
+      var rows = dim.inds.map(function (i) {
+        var o = R[i.id] || { count: 0 }, c = o.count || 0; tot += c;
+        var cls = c === 0 ? 'ok' : i.sev;
+        var nd = o.needs ? '<span class="nd" title="requer dados adicionais">i</span>' : '';
+        return '<div class="ind" data-id="' + i.id + '" title="' + i.d + '">' +
+          '<span class="s x-' + (c === 0 ? 'ok' : i.sev) + '"></span>' +
+          '<span class="n">' + i.n + '</span>' + nd +
+          '<span class="ct c-' + cls + '">' + n(c) + '</span></div>';
+      }).join('');
+      return '<section class="dim"><h3><span class="dot x-' + ws + '"></span>' + dim.icon + ' ' + dim.t +
+        '<span class="c">' + n(tot) + '</span></h3>' + rows + '</section>';
+    }).join('');
+
+    document.getElementById('bmo-dq-body').innerHTML =
+      '<div class="kpis">' + kp + '</div><div class="grid">' + cards + '</div>';
+    Array.prototype.forEach.call(document.querySelectorAll('#bmo-dq .ind'), function (el) {
+      el.onclick = function () { openDrawer(el.getAttribute('data-id')); };
+    });
+  }
+  function kpi(k, v, s, alert) {
+    return '<div class="kpi' + (alert ? ' alert' : '') + '"><div class="k">' + k + '</div><div class="v">' + v + '</div><div class="s">' + s + '</div></div>';
+  }
+  function kpiBar(k, v, pct) {
+    return '<div class="kpi"><div class="k">' + k + '</div><div class="v">' + v + '</div><div class="bar"><i style="width:' + pct + '%"></i></div></div>';
+  }
+
+  /* ============ Gaveta de detalhe ============ */
+  function findInd(id) { for (var a = 0; a < DIMS.length; a++) for (var b = 0; b < DIMS[a].inds.length; b++) if (DIMS[a].inds[b].id === id) return DIMS[a].inds[b]; return null; }
+  function pname(p) { return ((p.surname || '') + ', ' + (p.firstname || '')).replace(/^, |, $/, ''); }
+  function plink(p) { return '/cgi-bin/koha/members/moremember.pl?borrowernumber=' + (p.patron_id != null ? p.patron_id : ''); }
+  function openDrawer(id) {
+    var ind = findInd(id), o = (STATE.R[id]) || { count: 0 };
+    document.getElementById('bmo-dq-dr-t').textContent = ind ? ind.n : 'Registos';
+    document.getElementById('bmo-dq-dr-s').textContent = n(o.count) + ' registos' + (o.needs ? ' · requer dados adicionais' : '');
+    var html;
+    if (o.needs) {
+      html = '<p style="font-size:12.5px;color:#6b6b6b">Este indicador necessita de dados que não vêm no objeto base de /api/v1/patrons (circulação, relações de garante) ou de pré-cálculo periódico. A lista será preenchida quando essa fonte estiver ligada.</p>';
+    } else if (o.groups) {
+      html = '<table><thead><tr><th>Cartão</th><th>Nome</th><th>Email</th><th>Telefone</th></tr></thead><tbody>';
+      o.groups.forEach(function (g) {
+        html += '<tr class="gh"><td colspan="4">' + g._group.replace(/\|/g, ' · ') + ' (' + g.rows.length + ')</td></tr>';
+        g.rows.forEach(function (p) {
+          html += '<tr><td><a href="' + plink(p) + '">' + (p.cardnumber || '') + '</a></td><td>' + pname(p) + '</td><td>' + (p.email || '') + '</td><td>' + (p.mobile || p.phone || '') + '</td></tr>';
+        });
+      });
+      html += '</tbody></table>';
+    } else {
+      var rows = (o.sample || []);
+      html = '<table><thead><tr><th>Cartão</th><th>Nome</th><th>Valor relevante</th></tr></thead><tbody>' +
+        (rows.length ? rows.map(function (p) {
+          return '<tr><td><a href="' + plink(p) + '">' + (p.cardnumber || '') + '</a></td><td>' + pname(p) + '</td><td>' + detail(id, p) + '</td></tr>';
+        }).join('') : '<tr><td colspan="3" style="color:#6b6b6b">Sem registos para mostrar.</td></tr>') +
+        '</tbody></table>';
+    }
+    document.getElementById('bmo-dq-dr-b').innerHTML = html;
+    document.getElementById('bmo-dq-dr').classList.add('open');
+    document.getElementById('bmo-dq-scrim').style.display = 'block';
+  }
+  function detail(id, p) {
+    switch (id) {
+      case 'email_mal': return p.email || '';
+      case 'tel_inv': return (p.mobile || p.phone || '');
+      case 'cp_inv': return p.postal_code || '';
+      case 'dn_inv': return (p.date_of_birth || '') + ' (idade ' + (ageOf(p.date_of_birth) == null ? '?' : ageOf(p.date_of_birth)) + ')';
+      case 'freg_inv': return 'sort1 = "' + (p[CONFIG.fields.freguesia] || '') + '"';
+      case 'sem_freguesia': return '(vazio)';
+      default: return (p.email || p.mobile || p.phone || p.city || '');
+    }
+  }
+  function closeDrawer() {
+    document.getElementById('bmo-dq-dr').classList.remove('open');
+    document.getElementById('bmo-dq-scrim').style.display = 'none';
+  }
+
+  /* ============ Resultados de demonstração ============ */
+  function demoResults() {
+    var R = { _totais: DEMO._totais };
+    DIMS.forEach(function (d) { d.inds.forEach(function (i) {
+      var needs = ['dup_fuzzy', 'idade_cat', 'sem_mov', 'rgpd_menor'].indexOf(i.id) > -1;
+      R[i.id] = { count: DEMO[i.id] || 0, needs: needs, sample: [] };
+    }); });
+    return R;
+  }
+
+  /* ============ Arranque ============ */
+  function shell(host) {
+    var wrap = document.createElement('div');
+    wrap.id = 'bmo-dq';
+    wrap.innerHTML =
+      '<div class="hd"><div><h2>Qualidade dos dados — Leitores</h2><div class="meta" id="bmo-dq-meta"></div></div>' +
+      '<div><button class="btn" id="bmo-dq-csv">Exportar CSV</button> <button class="btn pri" id="bmo-dq-reload">Reanalisar</button></div></div>' +
+      '<div class="status" id="bmo-dq-status"></div><div id="bmo-dq-body"></div>';
+    host.insertBefore(wrap, host.firstChild);
+
+    var scrim = document.createElement('div'); scrim.id = 'bmo-dq-scrim';
+    var dr = document.createElement('aside'); dr.id = 'bmo-dq-dr';
+    dr.innerHTML = '<div class="h"><div><b id="bmo-dq-dr-t">—</b><span id="bmo-dq-dr-s">—</span></div><button id="bmo-dq-dr-x">×</button></div><div class="b" id="bmo-dq-dr-b"></div>';
+    document.body.appendChild(scrim); document.body.appendChild(dr);
+    scrim.onclick = closeDrawer;
+    document.getElementById('bmo-dq-dr-x').onclick = closeDrawer;
+    document.getElementById('bmo-dq-reload').onclick = function () { boot(true); };
+    document.getElementById('bmo-dq-csv').onclick = exportCSV;
+  }
+  function setStatus(t) { var el = document.getElementById('bmo-dq-status'); if (el) el.textContent = t || ''; }
+  function setMeta(R) {
+    var el = document.getElementById('bmo-dq-meta');
+    if (el) el.textContent = (R._totais.total || 0).toLocaleString('pt-PT') + ' leitores analisados · ' +
+      (CONFIG.useDemoData ? 'dados de demonstração' : 'REST API') + ' · ' + new Date().toLocaleString('pt-PT');
+  }
+  function exportCSV() {
+    var R = STATE.R; if (!R) return;
+    var lines = ['dimensao;indicador;severidade;contagem'];
+    DIMS.forEach(function (d) { d.inds.forEach(function (i) {
+      lines.push([d.t, i.n, i.sev, (R[i.id] ? R[i.id].count : 0)].join(';'));
+    }); });
+    var blob = new Blob(['\uFEFF' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = 'qualidade_leitores.csv'; a.click();
+  }
+
+  function boot(reloaded) {
+    injectCSS();
+    if (!document.getElementById('bmo-dq')) {
+      var host = document.querySelector(CONFIG.mount) || document.body;
+      shell(host);
+    }
+    if (CONFIG.useDemoData) {
+      STATE.R = demoResults(); setMeta(STATE.R); setStatus(''); renderAll();
+      return;
+    }
+    setStatus('A obter leitores da REST API...');
+    fetchAll(function (got, total) { setStatus('A obter leitores... ' + got + (total ? ' / ' + total : '')); })
+      .then(function (patrons) {
+        STATE.R = analyze(patrons); setMeta(STATE.R); setStatus(''); renderAll();
+      })
+      .catch(function (err) { setStatus('Erro ao obter dados: ' + err.message); });
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { boot(); });
+  else boot();
+})();
