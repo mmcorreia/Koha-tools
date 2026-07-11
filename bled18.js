@@ -1229,7 +1229,7 @@
 
     var status = document.createElement("span");
     status.className = "rbmo-biblioled-status";
-    status.textContent = "Versão digital disponível na BiblioLED";
+    status.textContent = "Título disponível na BiblioLED";
 
     identity.appendChild(status);
     header.appendChild(identity);
