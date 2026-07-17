@@ -1,6 +1,6 @@
 /* ==============================================================
    USER FRIENDLY LOGS
-   ========================================================*/
+   ============================================================== */
 
 (function () {
   'use strict';
@@ -128,21 +128,27 @@
     'itemnumber'
   ];
 
+  let enhanceScheduled = false;
+
   function esc(value) {
-    return String(value ?? '').replace(/[&<>"']/g, function (m) {
+    return String(value ?? '').replace(/[&<>"']/g, function (character) {
       return {
         '&': '&amp;',
         '<': '&lt;',
         '>': '&gt;',
         '"': '&quot;',
         "'": '&#039;'
-      }[m];
+      }[character];
     });
   }
 
   function clean(value) {
     value = String(value ?? '').trim();
-    if (!value || value === 'undef' || value === 'null') return '';
+
+    if (!value || value === 'undef' || value === 'null') {
+      return '';
+    }
+
     return value.replace(/^'|'$/g, '').trim();
   }
 
@@ -163,8 +169,8 @@
   }
 
   function displayValue(value) {
-    const v = normalise(value);
-    return v === '' ? '—' : v;
+    const normalisedValue = normalise(value);
+    return normalisedValue === '' ? '—' : normalisedValue;
   }
 
   function comparable(value) {
@@ -175,23 +181,28 @@
   }
 
   function translate(key, value) {
-    const v = displayValue(value);
+    const translatedValue = displayValue(value);
 
-    if (v === '—') return v;
-
-    if (STATE_TRANSLATIONS[key] && STATE_TRANSLATIONS[key][v] !== undefined) {
-      return STATE_TRANSLATIONS[key][v];
+    if (translatedValue === '—') {
+      return translatedValue;
     }
 
-    return v;
+    if (
+      STATE_TRANSLATIONS[key] &&
+      STATE_TRANSLATIONS[key][translatedValue] !== undefined
+    ) {
+      return STATE_TRANSLATIONS[key][translatedValue];
+    }
+
+    return translatedValue;
   }
 
   function parsePerlHash(text) {
     const data = {};
-    const re = /'([^']+)'\s*=>\s*(undef|null|'[^']*'|[0-9.]+)/g;
+    const regex = /'([^']+)'\s*=>\s*(undef|null|'[^']*'|[0-9.]+)/g;
     let match;
 
-    while ((match = re.exec(text)) !== null) {
+    while ((match = regex.exec(text)) !== null) {
       data[match[1]] = clean(match[2]);
     }
 
@@ -200,27 +211,45 @@
 
   function extractItemnumber(raw, objectCell) {
     const fromHash = parsePerlHash(raw).itemnumber;
-    if (fromHash) return fromHash;
 
-    const link = objectCell.find('a[href*="itemnumber="], a[href*="item_id="]').attr('href') || '';
-    const m = link.match(/(?:itemnumber|item_id)=([0-9]+)/);
-    if (m) return m[1];
+    if (fromHash) {
+      return fromHash;
+    }
 
-    const text = objectCell.text();
-    const m2 = text.match(/Exemplar\s+([0-9]+)/i);
-    if (m2) return m2[1];
+    const link =
+      objectCell
+        .find('a[href*="itemnumber="], a[href*="item_id="]')
+        .attr('href') || '';
+
+    const linkMatch = link.match(/(?:itemnumber|item_id)=([0-9]+)/);
+
+    if (linkMatch) {
+      return linkMatch[1];
+    }
+
+    const objectText = objectCell.text();
+    const textMatch = objectText.match(/Exemplar\s+([0-9]+)/i);
+
+    if (textMatch) {
+      return textMatch[1];
+    }
 
     return '';
   }
 
-  function valueFromCurrentItem(current, key) {
-    if (!current) return '';
+  function valueFromCurrentItem(currentItem, key) {
+    if (!currentItem) {
+      return '';
+    }
 
     const possibleKeys = API_MAP[key] || [key];
 
     for (const apiKey of possibleKeys) {
-      if (current[apiKey] !== undefined && current[apiKey] !== null) {
-        return current[apiKey];
+      if (
+        currentItem[apiKey] !== undefined &&
+        currentItem[apiKey] !== null
+      ) {
+        return currentItem[apiKey];
       }
     }
 
@@ -228,7 +257,9 @@
   }
 
   async function fetchCurrentItem(itemnumber) {
-    if (!itemnumber) return null;
+    if (!itemnumber) {
+      return null;
+    }
 
     const urls = [
       `/api/v1/items/${encodeURIComponent(itemnumber)}`,
@@ -239,36 +270,55 @@
       try {
         const response = await fetch(url, {
           credentials: 'same-origin',
-          headers: { Accept: 'application/json' }
+          headers: {
+            Accept: 'application/json'
+          }
         });
 
         if (response.ok) {
           return await response.json();
         }
-      } catch (e) {}
+      } catch (error) {
+        console.debug(
+          '[User Friendly Logs] Não foi possível consultar:',
+          url,
+          error
+        );
+      }
     }
 
     return null;
   }
 
-  function buildRows(before, current) {
+  function buildRows(before, currentItem) {
     const rows = [];
 
-    if (!current) return rows;
+    if (!currentItem) {
+      return rows;
+    }
 
     DISPLAY_FIELDS.forEach(function (key) {
       const beforeRaw = before[key];
-      const afterRaw = valueFromCurrentItem(current, key);
+      const afterRaw = valueFromCurrentItem(currentItem, key);
 
-      const beforeExists = beforeRaw !== undefined && beforeRaw !== null;
-      const afterExists = afterRaw !== undefined && afterRaw !== null;
+      const beforeExists =
+        beforeRaw !== undefined &&
+        beforeRaw !== null;
 
-      if (!beforeExists && !afterExists) return;
+      const afterExists =
+        afterRaw !== undefined &&
+        afterRaw !== null;
 
-      const beforeComp = comparable(beforeRaw);
-      const afterComp = comparable(afterRaw);
+      if (!beforeExists && !afterExists) {
+        return;
+      }
 
-      if (beforeComp === afterComp) return;
+      const beforeComparable = comparable(beforeRaw);
+      const afterComparable = comparable(afterRaw);
+
+      if (beforeComparable === afterComparable) {
+        return;
+      }
 
       rows.push({
         label: FIELD_LABELS[key] || key,
@@ -284,7 +334,9 @@
     if (!apiAvailable) {
       return `
         <div class="klog-note">
-          Não foi possível obter o valor atual do exemplar. Sem esse valor, não é possível calcular automaticamente o que foi efetivamente modificado.
+          Não foi possível obter o valor atual do exemplar.
+          Sem esse valor, não é possível calcular automaticamente
+          o que foi efetivamente modificado.
         </div>
       `;
     }
@@ -292,7 +344,8 @@
     if (!rows.length) {
       return `
         <div class="klog-empty">
-          Não foram detetadas diferenças entre o valor registado no log e o valor atual do exemplar.
+          Não foram detetadas diferenças entre o valor registado
+          no log e o valor atual do exemplar.
         </div>
       `;
     }
@@ -330,8 +383,13 @@
   function renderLoading() {
     return `
       <div class="klog-card">
-        <div class="klog-title">A interpretar alteração...</div>
-        <div class="klog-loading">A obter os valores atuais do exemplar.</div>
+        <div class="klog-title">
+          A interpretar alteração...
+        </div>
+
+        <div class="klog-loading">
+          A obter os valores atuais do exemplar.
+        </div>
       </div>
     `;
   }
@@ -339,18 +397,31 @@
   function renderItemCard(raw, action, objectCell, currentItem) {
     const before = parsePerlHash(raw);
     const rows = buildRows(before, currentItem);
-    const apiAvailable = !!currentItem;
+    const apiAvailable = Boolean(currentItem);
 
     let title = 'Exemplar modificado';
-    if (/adicionar/i.test(action)) title = 'Exemplar adicionado';
-    if (/eliminar/i.test(action)) title = 'Exemplar eliminado';
 
-    const barcode = before.barcode || valueFromCurrentItem(currentItem, 'barcode');
-    const callnumber = before.itemcallnumber || valueFromCurrentItem(currentItem, 'itemcallnumber');
+    if (/adicionar/i.test(action)) {
+      title = 'Exemplar adicionado';
+    }
+
+    if (/eliminar/i.test(action)) {
+      title = 'Exemplar eliminado';
+    }
+
+    const barcode =
+      before.barcode ||
+      valueFromCurrentItem(currentItem, 'barcode');
+
+    const callnumber =
+      before.itemcallnumber ||
+      valueFromCurrentItem(currentItem, 'itemcallnumber');
 
     let subtitle = 'Alteração registada no Koha.';
+
     if (barcode && callnumber) {
-      subtitle = `Exemplar ${esc(barcode)}, cota ${esc(callnumber)}.`;
+      subtitle =
+        `Exemplar ${esc(barcode)}, cota ${esc(callnumber)}.`;
     } else if (barcode) {
       subtitle = `Exemplar ${esc(barcode)}.`;
     } else if (callnumber) {
@@ -361,16 +432,25 @@
       <div class="klog-card">
         <div class="klog-header">
           <div class="klog-icon">📦</div>
+
           <div>
-            <div class="klog-title">${esc(title)}</div>
-            <div class="klog-subtitle">${subtitle}</div>
+            <div class="klog-title">
+              ${esc(title)}
+            </div>
+
+            <div class="klog-subtitle">
+              ${subtitle}
+            </div>
           </div>
         </div>
 
         ${renderTable(rows, apiAvailable)}
 
         <details class="klog-tech">
-          <summary>Ver dados técnicos originais</summary>
+          <summary>
+            Ver dados técnicos originais
+          </summary>
+
           <pre>${esc(raw)}</pre>
         </details>
       </div>
@@ -382,18 +462,30 @@
       <div class="klog-card">
         <div class="klog-header">
           <div class="klog-icon">📝</div>
+
           <div>
-            <div class="klog-title">${esc(objectText || 'Registo')}</div>
-            <div class="klog-subtitle">Evento de ${esc(String(action || '').toLowerCase())} registado no Koha.</div>
+            <div class="klog-title">
+              ${esc(objectText || 'Registo')}
+            </div>
+
+            <div class="klog-subtitle">
+              Evento de
+              ${esc(String(action || '').toLowerCase())}
+              registado no Koha.
+            </div>
           </div>
         </div>
 
         <div class="klog-empty">
-          Este tipo de log ainda não tem interpretação estruturada em tabela “antes/depois”.
+          Este tipo de log ainda não tem interpretação estruturada
+          em tabela “antes/depois”.
         </div>
 
         <details class="klog-tech">
-          <summary>Ver dados técnicos originais</summary>
+          <summary>
+            Ver dados técnicos originais
+          </summary>
+
           <pre>${esc(raw)}</pre>
         </details>
       </div>
@@ -401,50 +493,120 @@
   }
 
   async function enhanceRow(row) {
-    if (row.data('klog-diff')) return;
+    if (row.attr('data-klog-diff') === '1') {
+      return;
+    }
 
-    const cells = row.find('td');
-    if (cells.length < 6) return;
+    const cells = row.children('td');
+
+    if (cells.length < 6) {
+      return;
+    }
 
     const action = cells.eq(3).text().trim();
     const objectCell = cells.eq(4);
     const objectText = objectCell.text().trim();
     const infoCell = cells.eq(5);
-
     const raw = infoCell.text().trim();
-    if (!raw) return;
 
-    row.data('klog-diff', true);
-
-    if (/^\s*item\s+\$VAR/i.test(raw)) {
-      infoCell.html(renderLoading());
-
-      const itemnumber = extractItemnumber(raw, objectCell);
-      const currentItem = await fetchCurrentItem(itemnumber);
-
-      infoCell.html(renderItemCard(raw, action, objectCell, currentItem));
+    if (!raw) {
       return;
     }
 
-    infoCell.html(renderGenericCard(raw, action, objectText));
+    /*
+     * O atributo é usado em vez de apenas $.data(),
+     * porque o DataTables pode recriar os elementos da tabela.
+     */
+    row.attr('data-klog-diff', '1');
+
+    try {
+      if (/^\s*item\s+\$VAR/i.test(raw)) {
+        infoCell.html(renderLoading());
+
+        const itemnumber = extractItemnumber(raw, objectCell);
+        const currentItem = await fetchCurrentItem(itemnumber);
+
+        /*
+         * Confirma que a célula ainda pertence ao documento.
+         * O DataTables pode ter mudado de página enquanto a API respondia.
+         */
+        if (!document.documentElement.contains(infoCell[0])) {
+          return;
+        }
+
+        infoCell.html(
+          renderItemCard(
+            raw,
+            action,
+            objectCell,
+            currentItem
+          )
+        );
+
+        return;
+      }
+
+      infoCell.html(
+        renderGenericCard(
+          raw,
+          action,
+          objectText
+        )
+      );
+    } catch (error) {
+      row.removeAttr('data-klog-diff');
+
+      console.error(
+        '[User Friendly Logs] Erro ao interpretar linha:',
+        error
+      );
+    }
+  }
+
+  function findLogTables() {
+    return $('table').filter(function () {
+      return $(this)
+        .find('thead th, th')
+        .filter(function () {
+          return $(this).text().trim() === 'Info';
+        })
+        .length > 0;
+    });
   }
 
   function enhance() {
-    const table = $('table').filter(function () {
-      return $(this).find('th').filter(function () {
-        return $(this).text().trim() === 'Info';
-      }).length;
-    }).first();
+    const tables = findLogTables();
 
-    if (!table.length) return;
+    if (!tables.length) {
+      return;
+    }
 
-    table.find('tbody tr').each(function () {
-      enhanceRow($(this));
+    tables.each(function () {
+      $(this)
+        .find('tbody tr')
+        .each(function () {
+          enhanceRow($(this));
+        });
+    });
+  }
+
+  function scheduleEnhance() {
+    if (enhanceScheduled) {
+      return;
+    }
+
+    enhanceScheduled = true;
+
+    window.requestAnimationFrame(function () {
+      enhanceScheduled = false;
+      enhance();
     });
   }
 
   function injectCss() {
-    if ($('#klog-diff-css').length) return;
+    if ($('#klog-diff-css').length) {
+      return;
+    }
 
     $('head').append(`
       <style id="klog-diff-css">
@@ -461,7 +623,7 @@
           padding: 10px 12px;
           font-size: 12px;
           color: #1f2933;
-          box-shadow: 0 1px 2px rgba(0,0,0,.05);
+          box-shadow: 0 1px 2px rgba(0, 0, 0, .05);
           max-width: 820px;
         }
 
@@ -504,7 +666,7 @@
           border-collapse: collapse;
           margin-top: 8px;
           font-size: 12px;
-          background: #fff;
+          background: #ffffff;
         }
 
         .klog-diff-table th {
@@ -585,9 +747,77 @@
     `);
   }
 
+  function observeTableChanges() {
+    const observer = new MutationObserver(function (mutations) {
+      const relevantChange = mutations.some(function (mutation) {
+        if (mutation.type !== 'childList') {
+          return false;
+        }
+
+        return Array.from(mutation.addedNodes).some(function (node) {
+          if (node.nodeType !== Node.ELEMENT_NODE) {
+            return false;
+          }
+
+          return (
+            node.matches?.('table, tbody, tr') ||
+            Boolean(node.querySelector?.('table, tbody, tr'))
+          );
+        });
+      });
+
+      if (relevantChange) {
+        scheduleEnhance();
+      }
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+  }
+
+  function bindDataTablesEvents() {
+    /*
+     * Executa novamente após:
+     * - paginação;
+     * - ordenação;
+     * - pesquisa;
+     * - alteração do número de resultados;
+     * - qualquer redesenho do DataTables.
+     */
+    $(document)
+      .off('draw.dt.klogFriendlyLogs')
+      .on('draw.dt.klogFriendlyLogs', function () {
+        scheduleEnhance();
+      });
+
+    /*
+     * Salvaguarda adicional para versões do Koha
+     * que atualizem a tabela antes ou depois do evento draw.
+     */
+    $(document)
+      .off(
+        'page.dt.klogFriendlyLogs ' +
+        'search.dt.klogFriendlyLogs ' +
+        'order.dt.klogFriendlyLogs ' +
+        'length.dt.klogFriendlyLogs'
+      )
+      .on(
+        'page.dt.klogFriendlyLogs ' +
+        'search.dt.klogFriendlyLogs ' +
+        'order.dt.klogFriendlyLogs ' +
+        'length.dt.klogFriendlyLogs',
+        function () {
+          window.setTimeout(scheduleEnhance, 0);
+        }
+      );
+  }
+
   $(document).ready(function () {
     injectCss();
-    enhance();
+    bindDataTablesEvents();
+    observeTableChanges();
+    scheduleEnhance();
   });
-
 })();
