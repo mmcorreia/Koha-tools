@@ -1072,7 +1072,9 @@
 
     let body = '';
 
-    if (!currentItem) {
+    if (/adicionar|add/i.test(action)) {
+      body = '';
+    } else if (!currentItem) {
       body = `
         <div class="klog-note">
           Não foi possível obter o estado atual do exemplar. O log original continua disponível abaixo.
@@ -1128,7 +1130,9 @@
 
     let body = '';
 
-    if (!currentBiblio) {
+    if (/adicionar|add/i.test(action)) {
+      body = '';
+    } else if (!currentBiblio) {
       body = `
         <div class="klog-note">
           O registo bibliográfico foi reconhecido, mas não foi possível obter o seu estado atual através da API/exportação do Koha.
@@ -1145,7 +1149,7 @@
       `;
     } else {
       body = `
-        <div class="klog-note">
+        <div class="klog-empty">
           Não se identificam alterações no registo MARC. Possivelmente guardado sem edições.
         </div>
       `;
