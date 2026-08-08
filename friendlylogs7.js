@@ -1011,22 +1011,16 @@
     `;
   }
 
-  function getOriginalRaw(infoCell) {
-    const stored = infoCell.data('klog-original-raw');
-    if (stored !== undefined && stored !== null) return String(stored);
-    return infoCell.text();
-  }
-
   function renderTechnical(raw) {
     return `
       <details class="klog-tech">
-        <summary>Ver código original</summary>
+        <summary>Ver dados técnicos originais</summary>
         <pre>${esc(raw)}</pre>
       </details>
     `;
   }
 
-  function renderItemCard(getOriginalRaw(infoCell), action, currentItem) {
+  function renderItemCard(raw, action, currentItem) {
     const logSnapshot = parsePerlHash(raw);
     const rows = buildItemRows(logSnapshot, currentItem);
 
@@ -1075,6 +1069,10 @@
         </div>
 
         ${body}
+
+        <div class="klog-context-note">
+          Mostram-se apenas os campos presentes neste evento do log e cujo valor difere do estado atual. Campos ausentes no evento são ignorados, em vez de serem tratados como valores vazios.
+        </div>
 
         ${renderTechnical(raw)}
       </div>
@@ -1150,7 +1148,7 @@
     `;
   }
 
-  function renderGenericCard(getOriginalRaw(infoCell), action, objectText) {
+  function renderGenericCard(raw, action, objectText) {
     return `
       <div class="klog-card">
         <div class="klog-header">
@@ -1252,7 +1250,6 @@
     const raw = originalRaw.trim();
     if (!raw) return;
 
-    infoCell.data('klog-original-raw', originalRaw);
     row.data('klog-diff', true);
 
     const type = detectLogType(raw, objectCell, moduleText);
@@ -1269,7 +1266,7 @@
       const currentItem = await fetchCurrentItem(itemnumber);
 
       infoCell.html(
-        renderItemCard(getOriginalRaw(infoCell), action, currentItem)
+        renderItemCard(originalRaw, action, currentItem)
       );
 
       return;
@@ -1288,7 +1285,7 @@
 
       infoCell.html(
         renderBiblioCard(
-          getOriginalRaw(infoCell),
+          originalRaw,
           action,
           objectText,
           biblionumber,
@@ -1300,7 +1297,7 @@
     }
 
     infoCell.html(
-      renderGenericCard(getOriginalRaw(infoCell), action, objectText)
+      renderGenericCard(originalRaw, action, objectText)
     );
   }
 
