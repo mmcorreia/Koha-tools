@@ -1011,16 +1011,22 @@
     `;
   }
 
+  function getOriginalRaw(infoCell) {
+    const stored = infoCell.data('klog-original-raw');
+    if (stored !== undefined && stored !== null) return String(stored);
+    return infoCell.text();
+  }
+
   function renderTechnical(raw) {
     return `
       <details class="klog-tech">
-        <summary>Ver dados técnicos originais</summary>
+        <summary>Ver código original</summary>
         <pre>${esc(raw)}</pre>
       </details>
     `;
   }
 
-  function renderItemCard(raw, action, currentItem) {
+  function renderItemCard(getOriginalRaw(infoCell), action, currentItem) {
     const logSnapshot = parsePerlHash(raw);
     const rows = buildItemRows(logSnapshot, currentItem);
 
@@ -1069,10 +1075,6 @@
         </div>
 
         ${body}
-
-        <div class="klog-context-note">
-          Mostram-se apenas os campos presentes neste evento do log e cujo valor difere do estado atual. Campos ausentes no evento são ignorados, em vez de serem tratados como valores vazios.
-        </div>
 
         ${renderTechnical(raw)}
       </div>
@@ -1126,7 +1128,7 @@
     } else {
       body = `
         <div class="klog-note">
-          O registo bibliográfico foi reconhecido, mas este evento não contém informação MARC anterior suficiente para reconstruir automaticamente uma tabela de diferenças.
+          Possivelmente guardado sem alterações. O log não confirma alterações no MARC.
         </div>
       `;
     }
@@ -1143,16 +1145,12 @@
 
         ${body}
 
-        <div class="klog-context-note">
-          São ocultados campos idênticos e duplicados. Quando o log contém MARCXML, a comparação é feita campo a campo e subcampo a subcampo com o registo bibliográfico atual.
-        </div>
-
         ${renderTechnical(raw)}
       </div>
     `;
   }
 
-  function renderGenericCard(raw, action, objectText) {
+  function renderGenericCard(getOriginalRaw(infoCell), action, objectText) {
     return `
       <div class="klog-card">
         <div class="klog-header">
@@ -1250,9 +1248,11 @@
     const objectText = objectCell.text().trim();
     const infoCell = cells.eq(5);
 
-    const raw = infoCell.text().trim();
+    const originalRaw = infoCell.text();
+    const raw = originalRaw.trim();
     if (!raw) return;
 
+    infoCell.data('klog-original-raw', originalRaw);
     row.data('klog-diff', true);
 
     const type = detectLogType(raw, objectCell, moduleText);
@@ -1269,7 +1269,7 @@
       const currentItem = await fetchCurrentItem(itemnumber);
 
       infoCell.html(
-        renderItemCard(raw, action, currentItem)
+        renderItemCard(getOriginalRaw(infoCell), action, currentItem)
       );
 
       return;
@@ -1288,7 +1288,7 @@
 
       infoCell.html(
         renderBiblioCard(
-          raw,
+          getOriginalRaw(infoCell),
           action,
           objectText,
           biblionumber,
@@ -1300,7 +1300,7 @@
     }
 
     infoCell.html(
-      renderGenericCard(raw, action, objectText)
+      renderGenericCard(getOriginalRaw(infoCell), action, objectText)
     );
   }
 
