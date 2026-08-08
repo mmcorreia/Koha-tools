@@ -1061,7 +1061,7 @@
     return `
       <div class="klog-card">
         <div class="klog-header">
-          <div class="klog-icon"><i class="fa fa-book" aria-hidden="true"></i></div>
+          <div class="klog-icon"><i class="fa-solid fa-book-bookmark" aria-hidden="true"></i></div>
           <div>
             <div class="klog-title">${esc(title)}</div>
             <div class="klog-subtitle">${subtitle}</div>
@@ -1134,7 +1134,7 @@
     return `
       <div class="klog-card">
         <div class="klog-header">
-          <div class="klog-icon"><i class="fa fa-file-text-o" aria-hidden="true"></i></div>
+          <div class="klog-icon"><i class="fa-regular fa-file-lines" aria-hidden="true"></i></div>
           <div>
             <div class="klog-title">${esc(title)}</div>
             <div class="klog-subtitle">${subtitle}</div>
@@ -1156,7 +1156,7 @@
     return `
       <div class="klog-card">
         <div class="klog-header">
-          <div class="klog-icon"><i class="fa fa-file-o" aria-hidden="true"></i></div>
+          <div class="klog-icon"><i class="fa-regular fa-file" aria-hidden="true"></i></div>
           <div>
             <div class="klog-title">${esc(objectText || 'Registo')}</div>
             <div class="klog-subtitle">Evento de ${esc(String(action || '').toLowerCase())} registado no Koha.</div>
@@ -1360,7 +1360,7 @@
           width: 16px;
           height: 16px;
           margin-top: 1px;
-          color: #555;
+          color: #4b5563;
           font-size: 13px;
           line-height: 1;
         }
