@@ -1061,7 +1061,7 @@
     return `
       <div class="klog-card">
         <div class="klog-header">
-          <div class="klog-icon">📦</div>
+          <div class="klog-icon"><i class="fa fa-book" aria-hidden="true"></i></div>
           <div>
             <div class="klog-title">${esc(title)}</div>
             <div class="klog-subtitle">${subtitle}</div>
@@ -1134,7 +1134,7 @@
     return `
       <div class="klog-card">
         <div class="klog-header">
-          <div class="klog-icon">📚</div>
+          <div class="klog-icon"><i class="fa fa-file-text-o" aria-hidden="true"></i></div>
           <div>
             <div class="klog-title">${esc(title)}</div>
             <div class="klog-subtitle">${subtitle}</div>
@@ -1156,7 +1156,7 @@
     return `
       <div class="klog-card">
         <div class="klog-header">
-          <div class="klog-icon">📝</div>
+          <div class="klog-icon"><i class="fa fa-file-o" aria-hidden="true"></i></div>
           <div>
             <div class="klog-title">${esc(objectText || 'Registo')}</div>
             <div class="klog-subtitle">Evento de ${esc(String(action || '').toLowerCase())} registado no Koha.</div>
@@ -1353,15 +1353,16 @@
         }
 
         .klog-icon {
-          width: 28px;
-          height: 28px;
-          border-radius: 50%;
-          background: #eef3f6;
-          display: flex;
+          display: inline-flex;
           align-items: center;
           justify-content: center;
-          flex: 0 0 28px;
-          font-size: 15px;
+          flex: 0 0 auto;
+          width: 16px;
+          height: 16px;
+          margin-top: 1px;
+          color: #555;
+          font-size: 13px;
+          line-height: 1;
         }
 
         .klog-title {
