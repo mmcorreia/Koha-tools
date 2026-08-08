@@ -1011,11 +1011,35 @@
     `;
   }
 
+  function formatTechnicalRaw(raw) {
+    const text = String(raw ?? '').trim();
+
+    // If it already contains line breaks, preserve its original formatting.
+    if (/\r|\n/.test(text)) return text;
+
+    // Pretty-print one-line Perl Data::Dumper item hashes for readability,
+    // without changing the underlying values used by the friendly parser.
+    if (/^\s*item\s+\$VAR\d*\s*=\s*\{/i.test(text)) {
+      let body = text
+        .replace(/^\s*(item\s+\$VAR\d*\s*=\s*\{)\s*/i, '$1\n  ')
+        .replace(/\s*};?\s*$/, '\n};');
+
+      // Break only at commas followed by the next Perl hash key.
+      body = body.replace(/,\s*(?='[^']+'\s*=>)/g, ',\n  ');
+
+      return body;
+    }
+
+    return text;
+  }
+
   function renderTechnical(raw) {
+    const displayRaw = formatTechnicalRaw(raw);
+
     return `
       <details class="klog-tech">
         <summary>Ver dados técnicos originais</summary>
-        <pre>${esc(raw)}</pre>
+        <pre>${esc(displayRaw)}</pre>
       </details>
     `;
   }
