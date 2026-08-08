@@ -1061,7 +1061,7 @@
     return `
       <div class="klog-card">
         <div class="klog-header">
-          <div class="klog-icon"><i class="fa-light fa-bookmark" aria-hidden="true"></i></div>
+          <div class="klog-icon"><i class="fa-regular fa-bookmark" aria-hidden="true"></i></div>
           <div>
             <div class="klog-title">${esc(title)}</div>
             <div class="klog-subtitle">${subtitle}</div>
@@ -1134,7 +1134,7 @@
     return `
       <div class="klog-card">
         <div class="klog-header">
-          <div class="klog-icon"><i class="fa-light fa-file" aria-hidden="true"></i></div>
+          <div class="klog-icon"><i class="fa-regular fa-file" aria-hidden="true"></i></div>
           <div>
             <div class="klog-title">${esc(title)}</div>
             <div class="klog-subtitle">${subtitle}</div>
