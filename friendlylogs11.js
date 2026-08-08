@@ -974,7 +974,7 @@
     if (!rows.length) {
       return `
         <div class="klog-empty">
-          Possivelmente guardado sem alterações. Não foram encontradas diferenças.
+          Não se identificam alterações nos dados de exemplar. Possivelmente guardado sem edições.
         </div>
       `;
     }
@@ -1094,10 +1094,6 @@
 
         ${body}
 
-        <div class="klog-context-note">
-          Mostram-se apenas os campos presentes neste evento do log e cujo valor difere do estado atual. Campos ausentes no evento são ignorados, em vez de serem tratados como valores vazios.
-        </div>
-
         ${renderTechnical(raw)}
       </div>
     `;
@@ -1150,7 +1146,7 @@
     } else {
       body = `
         <div class="klog-note">
-          Possivelmente guardado sem alterações. O log não confirma alterações no MARC.
+          Não se identificam alterações no registo MARC. Possivelmente guardado sem edições.
         </div>
       `;
     }
