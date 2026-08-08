@@ -1004,9 +1004,9 @@
 
   function renderLoading(title, subtitle) {
     return `
-      <div class="klog-card klog-card-loading">
+      <div class="klog-card">
         <div class="klog-title">${esc(title)}</div>
-        <div class="klog-subtitle">${esc(subtitle)}</div>
+        <div class="klog-loading">${esc(subtitle)}</div>
       </div>
     `;
   }
@@ -1061,14 +1061,17 @@
     return `
       <div class="klog-card">
         <div class="klog-header">
-          <div class="klog-title">${esc(title)}</div>
-          <div class="klog-subtitle">${subtitle}</div>
+          <div class="klog-icon">📦</div>
+          <div>
+            <div class="klog-title">${esc(title)}</div>
+            <div class="klog-subtitle">${subtitle}</div>
+          </div>
         </div>
 
         ${body}
 
         <div class="klog-context-note">
-          Mostram-se apenas os campos presentes neste evento do log e cujo valor difere do estado atual.
+          Mostram-se apenas os campos presentes neste evento do log e cujo valor difere do estado atual. Campos ausentes no evento são ignorados, em vez de serem tratados como valores vazios.
         </div>
 
         ${renderTechnical(raw)}
@@ -1131,14 +1134,17 @@
     return `
       <div class="klog-card">
         <div class="klog-header">
-          <div class="klog-title">${esc(title)}</div>
-          <div class="klog-subtitle">${subtitle}</div>
+          <div class="klog-icon">📚</div>
+          <div>
+            <div class="klog-title">${esc(title)}</div>
+            <div class="klog-subtitle">${subtitle}</div>
+          </div>
         </div>
 
         ${body}
 
         <div class="klog-context-note">
-          Quando o log contém MARCXML, a comparação é feita campo a campo com o registo bibliográfico atual.
+          São ocultados campos idênticos e duplicados. Quando o log contém MARCXML, a comparação é feita campo a campo e subcampo a subcampo com o registo bibliográfico atual.
         </div>
 
         ${renderTechnical(raw)}
@@ -1150,8 +1156,11 @@
     return `
       <div class="klog-card">
         <div class="klog-header">
-          <div class="klog-title">${esc(objectText || 'Registo')}</div>
-          <div class="klog-subtitle">Evento de ${esc(String(action || '').toLowerCase())} registado no Koha.</div>
+          <div class="klog-icon">📝</div>
+          <div>
+            <div class="klog-title">${esc(objectText || 'Registo')}</div>
+            <div class="klog-subtitle">Evento de ${esc(String(action || '').toLowerCase())} registado no Koha.</div>
+          </div>
         </div>
 
         <div class="klog-empty">
@@ -1319,35 +1328,47 @@
     $('head').append(`
       <style id="klog-diff-css">
         table td:nth-child(6) {
-          min-width: 540px;
-          max-width: 780px;
+          min-width: 560px;
+          max-width: 820px;
           vertical-align: top;
         }
 
         .klog-card {
-          background: #fff;
-          border: 1px solid #d9d9d9;
-          border-radius: 4px;
-          padding: 8px 10px;
-          font-size: 12px;
-          line-height: 1.35;
-          color: #333;
-          max-width: 760px;
-        }
-
-        .klog-card + .klog-card {
-          margin-top: 6px;
+          background: #ffffff;
+          border: 1px solid #d7dde3;
+          border-radius: 7px;
+          padding: 7px 9px;
+          font-size: 11.5px;
+          line-height: 1.25;
+          color: #1f2933;
+          box-shadow: 0 1px 2px rgba(0,0,0,.04);
+          max-width: 800px;
         }
 
         .klog-header {
+          display: flex;
+          align-items: flex-start;
+          gap: 7px;
           margin-bottom: 6px;
+        }
+
+        .klog-icon {
+          width: 28px;
+          height: 28px;
+          border-radius: 50%;
+          background: #eef3f6;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex: 0 0 28px;
+          font-size: 15px;
         }
 
         .klog-title {
           font-weight: 700;
-          font-size: 12.5px;
-          color: #333;
-          margin: 0 0 2px 0;
+          font-size: 13px;
+          color: #111827;
+          margin-bottom: 2px;
         }
 
         .klog-subtitle,
@@ -1356,19 +1377,18 @@
         .klog-note,
         .klog-mode-note,
         .klog-context-note {
-          color: #555;
-          font-size: 11.5px;
+          color: #4b5563;
+          font-size: 12px;
         }
 
         .klog-diff-grid {
           display: grid;
-          grid-template-columns: minmax(170px, 31%) minmax(0, 34.5%) minmax(0, 34.5%);
-          margin-top: 6px;
-          border-top: 1px solid #ddd;
-          border-left: 1px solid #ddd;
+          grid-template-columns: minmax(145px, 28%) minmax(0, 36%) minmax(0, 36%);
+          margin-top: 5px;
+          border-top: 1px solid #d9dee3;
+          border-left: 1px solid #d9dee3;
           font-size: 11px;
-          line-height: 1.25;
-          background: #fff;
+          line-height: 1.2;
         }
 
         .klog-diff-head,
@@ -1376,18 +1396,19 @@
         .klog-diff-value {
           min-width: 0;
           padding: 4px 6px;
-          border-right: 1px solid #ddd;
-          border-bottom: 1px solid #ddd;
+          border-right: 1px solid #d9dee3;
+          border-bottom: 1px solid #d9dee3;
         }
 
         .klog-diff-head {
-          background: #f5f5f5;
-          color: #333;
+          background: #f3f5f7;
+          color: #374151;
           font-weight: 700;
         }
 
         .klog-diff-field {
           background: #fafafa;
+          border-left: 3px solid #d99a00;
         }
 
         .klog-diff-value {
@@ -1397,54 +1418,56 @@
         }
 
         .klog-diff-current {
-          background: #fcf8e3;
+          background: #fff8e8;
         }
+
 
         .klog-field-label {
           display: inline;
           font-weight: 600;
-          color: #333;
         }
 
         .klog-field-code {
           display: inline;
-          margin-left: 4px;
-          color: #888;
-          font-size: 10px;
+          margin-left: 5px;
+          color: #8a949e;
+          font-size: 9.5px;
           font-family: monospace;
           font-weight: 400;
         }
 
         .klog-note,
-        .klog-mode-note,
-        .klog-empty {
-          margin-top: 6px;
-          padding: 6px 8px;
-          border: 1px solid #ddd;
-          border-radius: 3px;
-          background: #fafafa;
-        }
-
-        .klog-note {
-          background: #fcf8e3;
-          border-color: #eedc94;
+        .klog-mode-note {
+          margin-top: 8px;
+          padding: 7px 8px;
+          background: #fff8e8;
+          border: 1px solid #ead29c;
+          border-radius: 4px;
         }
 
         .klog-mode-note {
-          background: #f5f5f5;
+          background: #f5f8fb;
+          border-color: #d8e1ea;
+        }
+
+        .klog-empty {
+          padding: 5px 6px;
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
+          border-radius: 5px;
         }
 
         .klog-context-note {
-          margin-top: 6px;
-          color: #666;
+          margin-top: 5px;
+          color: #6b7280;
           font-size: 10.5px;
-          line-height: 1.3;
+          line-height: 1.35;
         }
 
         .klog-tech {
           margin-top: 6px;
+          border-top: 1px solid #eef0f2;
           padding-top: 5px;
-          border-top: 1px solid #eee;
         }
 
         .klog-tech summary {
@@ -1456,24 +1479,72 @@
 
         .klog-tech pre {
           margin-top: 6px;
-          background: #f9f9f9;
-          border: 1px solid #ddd;
-          border-radius: 3px;
-          padding: 6px 8px;
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
+          border-radius: 5px;
+          padding: 8px;
           max-height: 180px;
           overflow: auto;
           white-space: pre-wrap;
           font-size: 10.5px;
           line-height: 1.35;
-          color: #444;
+          color: #334155;
         }
       </style>
     `);
   }
 
+  function installRefreshHooks() {
+    // O Koha/DataTables recria as linhas ao mudar de página, ordenar,
+    // pesquisar ou alterar o número de resultados visíveis.
+    // Por isso é necessário voltar a aplicar a transformação friendly.
+
+    $(document).on(
+      'draw.dt page.dt order.dt search.dt length.dt',
+      function () {
+        window.setTimeout(enhance, 0);
+      }
+    );
+
+    // Fallback para ecrãs/versões em que a atualização da tabela
+    // não dispara um evento DataTables utilizável.
+    const observer = new MutationObserver(function (mutations) {
+      let shouldRefresh = false;
+
+      for (const mutation of mutations) {
+        if (mutation.type !== 'childList' || !mutation.addedNodes.length) continue;
+
+        for (const node of mutation.addedNodes) {
+          if (
+            node.nodeType === 1 &&
+            (
+              node.matches?.('tr, tbody, table') ||
+              node.querySelector?.('tr')
+            )
+          ) {
+            shouldRefresh = true;
+            break;
+          }
+        }
+
+        if (shouldRefresh) break;
+      }
+
+      if (shouldRefresh) {
+        window.setTimeout(enhance, 0);
+      }
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+  }
+
   $(document).ready(function () {
     injectCss();
     enhance();
+    installRefreshHooks();
   });
 
 })();
