@@ -974,7 +974,7 @@
     if (!rows.length) {
       return `
         <div class="klog-empty">
-          Não foram detetadas diferenças nos dados que foi possível comparar.
+          Possivelmente guardado sem alterações. Não foram encontradas diferenças.
         </div>
       `;
     }
