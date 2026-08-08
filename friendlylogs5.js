@@ -1061,7 +1061,7 @@
     return `
       <div class="klog-card">
         <div class="klog-header">
-          <div class="klog-icon"><i class="fa-solid fa-book-bookmark" aria-hidden="true"></i></div>
+          <div class="klog-icon"><i class="fa-light fa-bookmark" aria-hidden="true"></i></div>
           <div>
             <div class="klog-title">${esc(title)}</div>
             <div class="klog-subtitle">${subtitle}</div>
@@ -1134,7 +1134,7 @@
     return `
       <div class="klog-card">
         <div class="klog-header">
-          <div class="klog-icon"><i class="fa-regular fa-file-lines" aria-hidden="true"></i></div>
+          <div class="klog-icon"><i class="fa-light fa-file" aria-hidden="true"></i></div>
           <div>
             <div class="klog-title">${esc(title)}</div>
             <div class="klog-subtitle">${subtitle}</div>
@@ -1357,11 +1357,11 @@
           align-items: center;
           justify-content: center;
           flex: 0 0 auto;
-          width: 16px;
-          height: 16px;
-          margin-top: 1px;
+          width: 20px;
+          height: 20px;
+          margin-top: 0;
           color: #4b5563;
-          font-size: 13px;
+          font-size: 17px;
           line-height: 1;
         }
 
