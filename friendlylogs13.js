@@ -1349,9 +1349,12 @@
     $('head').append(`
       <style id="klog-diff-css">
         table td:nth-child(6) {
-          min-width: 560px;
-          max-width: 820px;
+          width: 760px;
+          min-width: 760px;
+          max-width: 760px;
           vertical-align: top;
+          box-sizing: border-box;
+          overflow: hidden;
         }
 
         .klog-card {
@@ -1363,7 +1366,10 @@
           line-height: 1.25;
           color: #1f2933;
           box-shadow: 0 1px 2px rgba(0,0,0,.04);
+          width: 100%;
           max-width: 800px;
+          box-sizing: border-box;
+          overflow: hidden;
         }
 
         .klog-header {
@@ -1499,15 +1505,27 @@
           font-weight: 600;
         }
 
+        .klog-tech {
+          max-width: 100%;
+          min-width: 0;
+          overflow: hidden;
+        }
+
         .klog-tech pre {
           margin-top: 6px;
           background: #f8fafc;
           border: 1px solid #e2e8f0;
           border-radius: 5px;
           padding: 8px;
+          width: 100%;
+          max-width: 100%;
+          min-width: 0;
+          box-sizing: border-box;
           max-height: 180px;
           overflow: auto;
-          white-space: pre-wrap;
+          white-space: pre;
+          overflow-wrap: normal;
+          word-break: normal;
           font-size: 10.5px;
           line-height: 1.35;
           color: #334155;
