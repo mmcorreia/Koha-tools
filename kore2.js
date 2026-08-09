@@ -3232,7 +3232,12 @@ function renderWorkbenchSuperior(authority, score, estado) {
             var mencoes = STATE.ocorrencias.filter(function (o) { return o.grupo === "contexto"; }).length;
             var candidatos = STATE.ocorrencias.filter(function (o) { return o.grupo === "sem"; }).length;
             var ligados = STATE.ocorrencias.filter(function (o) { return o.problema === "Ligação correta"; }).length;
-            var totalCorrigir = sem9 + sem4 + sem9e4;
+            var totalCorrigir = STATE.dashboardExecutada
+              ? STATE.ocorrencias.filter(function (o) {
+              var p = koreV6Problema(o);
+              return p === "Falta $9" || p === "Falta $4" || p === "Falta $9 e $4";
+              }).length
+              : 0;
             var totalRever = outroAuth + responsabilidade;
             var datasEstado = analisarEstadoDatas(authority.datas);
             var datasClasse = datasEstado.estado === "ok" ? "kmod-ok" : (datasEstado.estado === "warn" ? "kmod-warn" : "kmod-bad");
