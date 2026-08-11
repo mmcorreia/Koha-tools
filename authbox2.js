@@ -19,7 +19,7 @@
    CSS
    ========================================================== */
 
-const AUTHBOX_CSS = `
+var AUTHBOX_CSS = `
 #authbox {
     --abx-ink:#17232d;
     --abx-muted:#667684;
@@ -224,9 +224,6 @@ const AUTHBOX_CSS = `
 (function () {
     "use strict";
 
-    if (window.__authboxAtivo) return;
-    window.__authboxAtivo = true;
-
     if (!window.jQuery) {
         console.warn("AuthBox: jQuery não está disponível.");
         return;
@@ -235,6 +232,11 @@ const AUTHBOX_CSS = `
     var $ = window.jQuery;
 
     $(document).ready(function () {
+        // Inicialização idempotente: substitui qualquer AuthBox anteriormente carregado.
+        $(document).off(".authbox");
+        $("#authbox").remove();
+        $("#authbox-styles").remove();
+        window.__authboxAtivo = true;
         if (!paginaAtualEhEditorAutoridade()) return;
 
         var CONFIG = {
