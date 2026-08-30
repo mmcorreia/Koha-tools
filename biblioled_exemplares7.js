@@ -36,7 +36,7 @@
   var DEBUG = true;
 
   /* Versão de diagnóstico para confirmar que o ficheiro novo foi carregado. */
-  var RBMO_BIBLIOLED_VERSION = "2026-08-31-author-matching-v6";
+  var RBMO_BIBLIOLED_VERSION = "2026-08-31-author-matching-v7";
   window._rbmo_biblioled_version = RBMO_BIBLIOLED_VERSION;
 
   function log() {
@@ -768,10 +768,7 @@
         }
 
         /*
-         * Correspondência aproximada palavra a palavra.
-         * Permite variantes como:
-         * Fiodor / Fedor / Fyodor
-         * Dostoievski / Dostoiévski / Dostoevsky
+         * 1. Correspondência normal, palavra a palavra.
          */
         var matchedKohaWords =
           kohaWords.filter(function (kohaWord) {
@@ -783,14 +780,6 @@
             });
           });
 
-        /*
-         * Se só temos uma palavra útil, uma correspondência
-         * aproximada é suficiente.
-         *
-         * Se temos duas ou mais, exigimos normalmente duas,
-         * mas aceitamos uma correspondência forte no apelido
-         * quando o primeiro nome diverge por transliteração.
-         */
         if (kohaWords.length === 1) {
           return matchedKohaWords.length >= 1;
         }
@@ -800,9 +789,16 @@
         }
 
         /*
-         * Fallback para nomes transliterados:
-         * compara diretamente as palavras mais longas, que
-         * tendem a corresponder ao apelido.
+         * 2. Autores transliterados:
+         *
+         * O apelido é normalmente a palavra mais longa.
+         * Exigimos uma correspondência forte no apelido.
+         *
+         * Depois permitimos uma tolerância maior no nome próprio
+         * para casos como:
+         *
+         * Fedor / Fiodor / Fiódor / Fyodor
+         * Dostoevsky / Dostoievski / Dostoiévski
          */
         var kohaLongest =
           kohaWords
@@ -819,46 +815,55 @@
             })[0];
 
         if (
-          kohaLongest &&
-          resourceLongest &&
-          wordSimilar(
+          !kohaLongest ||
+          !resourceLongest ||
+          similarityScore(
             kohaLongest,
             resourceLongest
-          )
+          ) < 0.72
         ) {
-          /*
-           * Se o apelido é fortemente semelhante,
-           * basta que exista alguma proximidade adicional
-           * entre os restantes elementos do nome.
-           */
-          var remainingKoha =
-            kohaWords.filter(function (word) {
-              return word !== kohaLongest;
-            });
+          return false;
+        }
 
-          var remainingResource =
-            resourceWords.filter(function (word) {
-              return word !== resourceLongest;
-            });
+        var remainingKoha =
+          kohaWords.filter(function (word) {
+            return word !== kohaLongest;
+          });
 
-          if (
-            !remainingKoha.length ||
-            !remainingResource.length
-          ) {
-            return true;
-          }
+        var remainingResource =
+          resourceWords.filter(function (word) {
+            return word !== resourceLongest;
+          });
 
-          return remainingKoha.some(function (kohaWord) {
+        /*
+         * Se só existe o apelido em um dos lados,
+         * aceitamos a correspondência forte do apelido.
+         */
+        if (
+          !remainingKoha.length ||
+          !remainingResource.length
+        ) {
+          return true;
+        }
+
+        /*
+         * Para o nome próprio usamos um limiar mais permissivo,
+         * mas apenas depois de o apelido já ter sido validado.
+         * 0.60 permite Fedor / Fiodor sem abrir demasiado o matching.
+         */
+        var firstNameCompatible =
+          remainingKoha.some(function (kohaWord) {
             return remainingResource.some(function (resourceWord) {
-              return wordSimilar(
-                kohaWord,
-                resourceWord
+              return (
+                similarityScore(
+                  kohaWord,
+                  resourceWord
+                ) >= 0.60
               );
             });
           });
-        }
 
-        return false;
+        return firstNameCompatible;
       }
     );
   }
@@ -2252,7 +2257,26 @@
     getAuthorWords: getAuthorWords,
     similarityScore: similarityScore,
     wordSimilar: wordSimilar,
-    authorMatches: authorMatches
+    authorMatches: authorMatches,
+    compareAuthorNames: function (first, second) {
+      var fakeResource = {
+        contributors: [
+          {
+            first_name: second,
+            last_name: "",
+            nature: "author"
+          }
+        ]
+      };
+
+      return {
+        first: first,
+        second: second,
+        firstWords: getAuthorWords(first),
+        secondWords: getAuthorWords(second),
+        matches: authorMatches(first, fakeResource)
+      };
+    }
   };
 
   if (
