@@ -36,7 +36,7 @@
   var DEBUG = true;
 
   /* Versão de diagnóstico para confirmar que o ficheiro novo foi carregado. */
-  var RBMO_BIBLIOLED_VERSION = "2026-08-31-biblioled-copy-v8";
+  var RBMO_BIBLIOLED_VERSION = "2026-08-31-biblioled-link-v9";
   window._rbmo_biblioled_version = RBMO_BIBLIOLED_VERSION;
 
   function log() {
@@ -497,6 +497,47 @@
       "&nature=" +
       "&medium="
     );
+  }
+
+
+  function getMatchedBiblioledSearchData(resources, fallbackTitle, fallbackAuthor) {
+    var matchedTitle = "";
+    var matchedAuthor = "";
+
+    if (Array.isArray(resources) && resources.length) {
+      var firstResource = resources[0] || {};
+
+      matchedTitle =
+        cleanTitle(firstResource.title || "");
+
+      var biblioledAuthors =
+        getResourceAuthors(
+          firstResource,
+          "author"
+        );
+
+      if (!biblioledAuthors.length) {
+        biblioledAuthors =
+          getResourceAuthors(firstResource);
+      }
+
+      if (biblioledAuthors.length) {
+        matchedAuthor =
+          cleanAuthor(
+            biblioledAuthors[0]
+          );
+      }
+    }
+
+    return {
+      title:
+        matchedTitle ||
+        cleanTitle(fallbackTitle),
+
+      author:
+        matchedAuthor ||
+        cleanAuthor(fallbackAuthor)
+    };
   }
 
   function getResources(response) {
@@ -1842,9 +1883,19 @@
       panel.appendChild(createEditionRow(resource));
     });
 
+    var matchedSearchData =
+      getMatchedBiblioledSearchData(
+        resources,
+        title,
+        author
+      );
+
     var link = document.createElement("a");
     link.className = "rbmo-biblioled-link";
-    link.href = getPublicSearchUrl(title, author);
+    link.href = getPublicSearchUrl(
+      matchedSearchData.title,
+      matchedSearchData.author
+    );
     link.target = "_blank";
     link.rel = "noopener";
     link.textContent = "Ver na BiblioLED";
@@ -2209,8 +2260,16 @@
                   availability,
                 publicSearchUrl:
                   getPublicSearchUrl(
-                    title,
-                    author
+                    getMatchedBiblioledSearchData(
+                      detailedResources,
+                      title,
+                      author
+                    ).title,
+                    getMatchedBiblioledSearchData(
+                      detailedResources,
+                      title,
+                      author
+                    ).author
                   )
               };
 
