@@ -36,7 +36,7 @@
   var DEBUG = true;
 
   /* Versão de diagnóstico para confirmar que o ficheiro novo foi carregado. */
-  var RBMO_BIBLIOLED_VERSION = "2026-08-30-availability-v3";
+  var RBMO_BIBLIOLED_VERSION = "2026-08-31-author-matching-v5";
   window._rbmo_biblioled_version = RBMO_BIBLIOLED_VERSION;
 
   function log() {
@@ -89,6 +89,88 @@
       .replace(/[^a-z0-9\s]/g, " ")
       .replace(/\s+/g, " ")
       .trim();
+  }
+
+  function levenshteinDistance(a, b) {
+    a = String(a || "");
+    b = String(b || "");
+
+    var matrix = [];
+    var i;
+    var j;
+
+    for (i = 0; i <= b.length; i++) {
+      matrix[i] = [i];
+    }
+
+    for (j = 0; j <= a.length; j++) {
+      matrix[0][j] = j;
+    }
+
+    for (i = 1; i <= b.length; i++) {
+      for (j = 1; j <= a.length; j++) {
+        if (b.charAt(i - 1) === a.charAt(j - 1)) {
+          matrix[i][j] = matrix[i - 1][j - 1];
+        } else {
+          matrix[i][j] = Math.min(
+            matrix[i - 1][j - 1] + 1,
+            matrix[i][j - 1] + 1,
+            matrix[i - 1][j] + 1
+          );
+        }
+      }
+    }
+
+    return matrix[b.length][a.length];
+  }
+
+  function similarityScore(a, b) {
+    var first = normalizeText(a);
+    var second = normalizeText(b);
+
+    if (!first || !second) {
+      return 0;
+    }
+
+    if (first === second) {
+      return 1;
+    }
+
+    var maxLength = Math.max(first.length, second.length);
+
+    if (!maxLength) {
+      return 1;
+    }
+
+    return 1 - (
+      levenshteinDistance(first, second) /
+      maxLength
+    );
+  }
+
+  function wordSimilar(a, b) {
+    var first = normalizeText(a);
+    var second = normalizeText(b);
+
+    if (!first || !second) {
+      return false;
+    }
+
+    if (first === second) {
+      return true;
+    }
+
+    /*
+     * Para palavras muito curtas exigimos mais rigor.
+     * Para nomes/apelidos com 5+ letras, toleramos variantes
+     * de transliteração e pequenas diferenças ortográficas.
+     */
+    var threshold =
+      Math.max(first.length, second.length) >= 8
+        ? 0.72
+        : 0.80;
+
+    return similarityScore(first, second) >= threshold;
   }
 
   function cleanTitle(value) {
@@ -674,26 +756,98 @@
           return false;
         }
 
-        var commonWords =
-          kohaWords.filter(function (word) {
-            return (
-              resourceWords.indexOf(word) !== -1
-            );
+        /*
+         * Correspondência aproximada palavra a palavra.
+         * Permite variantes como:
+         * Fiodor / Fedor / Fyodor
+         * Dostoievski / Dostoiévski / Dostoevsky
+         */
+        var matchedKohaWords =
+          kohaWords.filter(function (kohaWord) {
+            return resourceWords.some(function (resourceWord) {
+              return wordSimilar(
+                kohaWord,
+                resourceWord
+              );
+            });
           });
 
-        var requiredMatches =
-          kohaWords.length === 1
-            ? 1
-            : Math.min(
-                2,
-                kohaWords.length,
-                resourceWords.length
-              );
+        /*
+         * Se só temos uma palavra útil, uma correspondência
+         * aproximada é suficiente.
+         *
+         * Se temos duas ou mais, exigimos normalmente duas,
+         * mas aceitamos uma correspondência forte no apelido
+         * quando o primeiro nome diverge por transliteração.
+         */
+        if (kohaWords.length === 1) {
+          return matchedKohaWords.length >= 1;
+        }
 
-        return (
-          commonWords.length >=
-          requiredMatches
-        );
+        if (matchedKohaWords.length >= 2) {
+          return true;
+        }
+
+        /*
+         * Fallback para nomes transliterados:
+         * compara diretamente as palavras mais longas, que
+         * tendem a corresponder ao apelido.
+         */
+        var kohaLongest =
+          kohaWords
+            .slice()
+            .sort(function (a, b) {
+              return b.length - a.length;
+            })[0];
+
+        var resourceLongest =
+          resourceWords
+            .slice()
+            .sort(function (a, b) {
+              return b.length - a.length;
+            })[0];
+
+        if (
+          kohaLongest &&
+          resourceLongest &&
+          wordSimilar(
+            kohaLongest,
+            resourceLongest
+          )
+        ) {
+          /*
+           * Se o apelido é fortemente semelhante,
+           * basta que exista alguma proximidade adicional
+           * entre os restantes elementos do nome.
+           */
+          var remainingKoha =
+            kohaWords.filter(function (word) {
+              return word !== kohaLongest;
+            });
+
+          var remainingResource =
+            resourceWords.filter(function (word) {
+              return word !== resourceLongest;
+            });
+
+          if (
+            !remainingKoha.length ||
+            !remainingResource.length
+          ) {
+            return true;
+          }
+
+          return remainingKoha.some(function (kohaWord) {
+            return remainingResource.some(function (resourceWord) {
+              return wordSimilar(
+                kohaWord,
+                resourceWord
+              );
+            });
+          });
+        }
+
+        return false;
       }
     );
   }
