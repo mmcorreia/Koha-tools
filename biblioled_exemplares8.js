@@ -36,7 +36,7 @@
   var DEBUG = true;
 
   /* Versão de diagnóstico para confirmar que o ficheiro novo foi carregado. */
-  var RBMO_BIBLIOLED_VERSION = "2026-08-31-author-matching-v7";
+  var RBMO_BIBLIOLED_VERSION = "2026-08-31-biblioled-copy-v8";
   window._rbmo_biblioled_version = RBMO_BIBLIOLED_VERSION;
 
   function log() {
@@ -1199,6 +1199,23 @@
       "  color: #64748b;",
       "}",
 
+      ".rbmo-biblioled-intro {",
+      "  margin: -2px 0 12px 0;",
+      "  font-size: 13px;",
+      "  color: #475569;",
+      "}",
+
+      ".rbmo-biblioled-intro a {",
+      "  margin-left: 4px;",
+      "  color: #0076a3;",
+      "  text-decoration: none;",
+      "  font-weight: 500;",
+      "}",
+
+      ".rbmo-biblioled-intro a:hover {",
+      "  text-decoration: underline;",
+      "}",
+
       ".rbmo-biblioled-card--highlight {",
       "  background: #eef7fb;",
       "  border: 1.5px solid #0076a3;",
@@ -1414,20 +1431,6 @@
       "}",
 
       ".rbmo-biblioled-link:hover {",
-      "  text-decoration: underline;",
-      "}",
-
-      ".rbmo-biblioled-about-link {",
-      "  display: inline-flex;",
-      "  align-items: center;",
-      "  margin-left: 12px;",
-      "  font-size: 12px;",
-      "  color: #64748b;",
-      "  text-decoration: none;",
-      "}",
-
-      ".rbmo-biblioled-about-link:hover {",
-      "  color: #0076a3;",
       "  text-decoration: underline;",
       "}",
 
@@ -1793,6 +1796,23 @@
 
     card.appendChild(sectionTitle);
 
+    var intro = document.createElement("p");
+    intro.className = "rbmo-biblioled-intro";
+    intro.appendChild(
+      document.createTextNode(
+        "Aceda a este título em formato ebook com o seu cartão de leitor."
+      )
+    );
+
+    var learnMore = document.createElement("a");
+    learnMore.href = "https://aml.biblioled.gov.pt/about";
+    learnMore.target = "_blank";
+    learnMore.rel = "noopener";
+    learnMore.textContent = "Saber mais";
+    intro.appendChild(learnMore);
+
+    card.appendChild(intro);
+
     if (highlight) {
       var statusGroup = document.createElement("div");
       statusGroup.className = "rbmo-biblioled-status-group";
@@ -1829,14 +1849,6 @@
     link.rel = "noopener";
     link.textContent = "Ver na BiblioLED";
     panel.appendChild(link);
-
-    var aboutLink = document.createElement("a");
-    aboutLink.className = "rbmo-biblioled-about-link";
-    aboutLink.href = "https://aml.biblioled.gov.pt/about";
-    aboutLink.target = "_blank";
-    aboutLink.rel = "noopener";
-    aboutLink.textContent = "ⓘ O que é a BiblioLED?";
-    panel.appendChild(aboutLink);
 
     card.appendChild(panel);
 
