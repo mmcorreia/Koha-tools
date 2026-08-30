@@ -993,21 +993,25 @@
 
     style.textContent = [
       ".rbmo-biblioled-card {",
-      "  margin: 22px 0 24px 0;",
-      "  padding: 14px 16px;",
+      "  margin: 20px 0 16px 0;",
+      "  padding: 14px 16px 12px 16px;",
       "  background: #fbfcfd;",
-      "  border: 1px solid #dfe5ea;",
-      "  border-radius: 8px;",
+      "  border-top: 1px solid #dfe5ea;",
+      "  border-bottom: 1px solid #dfe5ea;",
+      "  border-left: 0;",
+      "  border-right: 0;",
+      "  border-radius: 0;",
       "  font-size: 13px;",
       "  overflow: hidden;",
       "}",
 
       ".rbmo-biblioled-section-title {",
       "  display: flex;",
-      "  align-items: center;",
-      "  gap: 10px;",
-      "  margin: 0 0 12px 0;",
-      "  font-size: 18px;",
+      "  align-items: baseline;",
+      "  justify-content: space-between;",
+      "  gap: 12px;",
+      "  margin: 0 0 10px 0;",
+      "  font-size: 17px;",
       "  font-weight: 600;",
       "  color: #1f2937;",
       "}",
@@ -1020,9 +1024,9 @@
       "  display: inline-flex;",
       "  align-items: center;",
       "  gap: 6px;",
-      "  font-size: 13px;",
+      "  font-size: 12px;",
       "  font-weight: 400;",
-      "  color: #475569;",
+      "  color: #64748b;",
       "}",
 
       ".rbmo-biblioled-card--highlight {",
@@ -1167,9 +1171,9 @@
 
       ".rbmo-biblioled-row {",
       "  display: grid;",
-      "  grid-template-columns: 0.65fr 1.45fr 1.4fr;",
+      "  grid-template-columns: 0.55fr 1.25fr 1.5fr;",
       "  gap: 14px;",
-      "  padding: 8px 10px;",
+      "  padding: 9px 8px;",
       "  align-items: center;",
       "}",
 
@@ -1179,9 +1183,10 @@
 
       ".rbmo-biblioled-row--head {",
       "  font-size: 11.5px;",
-      "  font-weight: 600;",
-      "  color: #475569;",
-      "  padding-bottom: 6px;",
+      "  font-weight: 700;",
+      "  color: #334155;",
+      "  padding-top: 4px;",
+      "  padding-bottom: 7px;",
       "}",
 
       ".rbmo-biblioled-muted {",
@@ -1189,19 +1194,28 @@
       "}",
 
       ".rbmo-biblioled-availability {",
-      "  font-weight: 500;",
+      "  display: inline-flex;",
+      "  align-items: center;",
+      "  width: fit-content;",
+      "  padding: 3px 8px;",
+      "  border-radius: 999px;",
+      "  font-weight: 600;",
+      "  line-height: 1.35;",
       "}",
 
       ".rbmo-biblioled-availability--available {",
-      "  color: #238636;",
+      "  color: #166534;",
+      "  background: #ecfdf3;",
       "}",
 
       ".rbmo-biblioled-availability--reserved {",
-      "  color: #b45309;",
+      "  color: #9a3412;",
+      "  background: #fff7ed;",
       "}",
 
       ".rbmo-biblioled-availability--unknown {",
-      "  color: #64748b;",
+      "  color: #475569;",
+      "  background: #f1f5f9;",
       "}",
 
       ".rbmo-biblioled-secondary {",
@@ -1222,8 +1236,9 @@
       "  display: inline-flex;",
       "  align-items: center;",
       "  gap: 4px;",
-      "  margin-top: 8px;",
+      "  margin-top: 10px;",
       "  font-size: 13px;",
+      "  font-weight: 600;",
       "  color: #0076a3;",
       "  text-decoration: none;",
       "}",
@@ -1233,8 +1248,9 @@
       "}",
 
       ".rbmo-biblioled-about-link {",
-      "  display: inline-block;",
-      "  margin-left: 14px;",
+      "  display: inline-flex;",
+      "  align-items: center;",
+      "  margin-left: 12px;",
       "  font-size: 12px;",
       "  color: #64748b;",
       "  text-decoration: none;",
@@ -1649,7 +1665,7 @@
     aboutLink.href = "https://aml.biblioled.gov.pt/about";
     aboutLink.target = "_blank";
     aboutLink.rel = "noopener";
-    aboutLink.textContent = "O que é a BiblioLED?";
+    aboutLink.textContent = "ⓘ O que é a BiblioLED?";
     panel.appendChild(aboutLink);
 
     card.appendChild(panel);
@@ -1797,6 +1813,28 @@
     if (!placeElementAtTarget(element)) {
       warn(
         "não foi encontrado o local dos exemplares para inserir o cartão."
+      );
+      return;
+    }
+
+    var holdingsTarget = getInsertTarget();
+
+    if (
+      holdingsTarget &&
+      holdingsTarget.element &&
+      !document.getElementById("rbmo-physical-holdings-title")
+    ) {
+      var physicalTitle = document.createElement("h2");
+      physicalTitle.id = "rbmo-physical-holdings-title";
+      physicalTitle.textContent = "Exemplares físicos";
+      physicalTitle.style.fontSize = "17px";
+      physicalTitle.style.fontWeight = "600";
+      physicalTitle.style.margin = "16px 0 10px 0";
+      physicalTitle.style.color = "#1f2937";
+
+      holdingsTarget.element.insertAdjacentElement(
+        "beforebegin",
+        physicalTitle
       );
     }
   }
