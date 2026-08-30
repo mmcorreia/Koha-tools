@@ -36,7 +36,7 @@
   var DEBUG = true;
 
   /* Versão de diagnóstico para confirmar que o ficheiro novo foi carregado. */
-  var RBMO_BIBLIOLED_VERSION = "2026-08-31-author-matching-v5";
+  var RBMO_BIBLIOLED_VERSION = "2026-08-31-author-matching-v6";
   window._rbmo_biblioled_version = RBMO_BIBLIOLED_VERSION;
 
   function log() {
@@ -188,6 +188,14 @@
       .replace(/\s*\/.*$/g, "")
       .replace(/\s*;\s*.*$/g, "")
       .replace(/\bet al\.?.*$/i, "")
+      /*
+       * Remove datas biográficas, por exemplo:
+       * 1821-1881
+       * 1821–1881
+       * 1821-
+       */
+      .replace(/\b\d{3,4}\s*[-–—]\s*\d{0,4}\b/g, " ")
+      .replace(/\b\d{3,4}\b/g, " ")
       .replace(/[;,:\[\]\(\)"'«»“”‘’!?]+/g, " ")
       .replace(/\s+/g, " ")
       .trim();
@@ -719,10 +727,13 @@
     ];
 
     return uniqueWords(
-      normalizeText(value)
+      normalizeText(
+        cleanAuthor(value)
+      )
         .split(" ")
         .filter(function (word) {
           return (
+            /^[a-z]+$/.test(word) &&
             word.length >= 3 &&
             ignoredWords.indexOf(word) === -1
           );
@@ -2236,7 +2247,12 @@
   window._rbmoBiblioledDebug = {
     getApiResourceUrl: getApiResourceUrl,
     fetchResourceDetail: fetchResourceDetail,
-    getApiSearchUrl: getApiSearchUrl
+    getApiSearchUrl: getApiSearchUrl,
+    cleanAuthor: cleanAuthor,
+    getAuthorWords: getAuthorWords,
+    similarityScore: similarityScore,
+    wordSimilar: wordSimilar,
+    authorMatches: authorMatches
   };
 
   if (
