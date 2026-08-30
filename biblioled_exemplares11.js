@@ -36,7 +36,7 @@
   var DEBUG = true;
 
   /* Versão de diagnóstico para confirmar que o ficheiro novo foi carregado. */
-  var RBMO_BIBLIOLED_VERSION = "2026-08-31-biblioled-semaforo-v10";
+  var RBMO_BIBLIOLED_VERSION = "2026-08-31-biblioled-logo-link-v11";
   window._rbmo_biblioled_version = RBMO_BIBLIOLED_VERSION;
 
   function log() {
@@ -1227,19 +1227,6 @@
       "  color: #1f2937;",
       "}",
 
-      ".rbmo-biblioled-section-title .rbmo-biblioled-logo {",
-      "  height: 18px;",
-      "}",
-
-      ".rbmo-biblioled-section-brand {",
-      "  display: inline-flex;",
-      "  align-items: center;",
-      "  gap: 6px;",
-      "  font-size: 12px;",
-      "  font-weight: 400;",
-      "  color: #64748b;",
-      "}",
-
       ".rbmo-biblioled-intro {",
       "  margin: -2px 0 12px 0;",
       "  font-size: 13px;",
@@ -1471,12 +1458,19 @@
       ".rbmo-biblioled-link {",
       "  display: inline-flex;",
       "  align-items: center;",
-      "  gap: 4px;",
+      "  gap: 7px;",
       "  margin-top: 10px;",
       "  font-size: 13px;",
       "  font-weight: 600;",
       "  color: #0076a3;",
       "  text-decoration: none;",
+      "}",
+
+      ".rbmo-biblioled-link-logo {",
+      "  height: 17px;",
+      "  width: auto;",
+      "  display: block;",
+      "  flex: 0 0 auto;",
       "}",
 
       ".rbmo-biblioled-link:hover {",
@@ -1817,39 +1811,13 @@
     titleText.textContent = "Disponibilidade digital";
     sectionTitle.appendChild(titleText);
 
-    var brand = document.createElement("span");
-    brand.className = "rbmo-biblioled-section-brand";
-
-    var logo = document.createElement("img");
-    logo.className = "rbmo-biblioled-logo";
-    logo.src = BIBLIOLED_ICON;
-    logo.alt = "";
-
-    var fallback = document.createElement("span");
-    fallback.className = "rbmo-biblioled-logo-fallback";
-    fallback.textContent = "BiblioLED";
-    fallback.style.display = "none";
-
-    logo.onerror = function () {
-      logo.style.display = "none";
-      fallback.style.display = "inline";
-    };
-
-    var brandText = document.createElement("span");
-    brandText.textContent = "BiblioLED";
-
-    brand.appendChild(logo);
-    brand.appendChild(fallback);
-    brand.appendChild(brandText);
-    sectionTitle.appendChild(brand);
-
     card.appendChild(sectionTitle);
 
     var intro = document.createElement("p");
     intro.className = "rbmo-biblioled-intro";
     intro.appendChild(
       document.createTextNode(
-        "Aceda a este título em formato ebook."
+        "Aceda a este título em formato ebook com o seu cartão de leitor."
       )
     );
 
@@ -1906,7 +1874,23 @@
     );
     link.target = "_blank";
     link.rel = "noopener";
-    link.textContent = "Ver na BiblioLED";
+
+    var linkLogo = document.createElement("img");
+    linkLogo.className = "rbmo-biblioled-link-logo";
+    linkLogo.src = BIBLIOLED_ICON;
+    linkLogo.alt = "";
+    linkLogo.setAttribute("aria-hidden", "true");
+
+    linkLogo.onerror = function () {
+      linkLogo.style.display = "none";
+    };
+
+    var linkText = document.createElement("span");
+    linkText.textContent = "Ver na BiblioLED";
+
+    link.appendChild(linkLogo);
+    link.appendChild(linkText);
+
     panel.appendChild(link);
 
     card.appendChild(panel);
