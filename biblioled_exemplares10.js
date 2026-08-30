@@ -36,7 +36,7 @@
   var DEBUG = true;
 
   /* Versão de diagnóstico para confirmar que o ficheiro novo foi carregado. */
-  var RBMO_BIBLIOLED_VERSION = "2026-08-31-biblioled-link-v9";
+  var RBMO_BIBLIOLED_VERSION = "2026-08-31-biblioled-semaforo-v10";
   window._rbmo_biblioled_version = RBMO_BIBLIOLED_VERSION;
 
   function log() {
@@ -1424,26 +1424,34 @@
       ".rbmo-biblioled-availability {",
       "  display: inline-flex;",
       "  align-items: center;",
+      "  gap: 7px;",
       "  width: fit-content;",
-      "  padding: 3px 8px;",
-      "  border-radius: 999px;",
-      "  font-weight: 600;",
+      "  padding: 0;",
+      "  font-weight: 500;",
       "  line-height: 1.35;",
+      "  color: #334155;",
       "}",
 
-      ".rbmo-biblioled-availability--available {",
-      "  color: #166534;",
-      "  background: #ecfdf3;",
+      ".rbmo-biblioled-availability::before {",
+      "  content: '';",
+      "  display: inline-block;",
+      "  width: 8px;",
+      "  height: 8px;",
+      "  border-radius: 50%;",
+      "  flex: 0 0 8px;",
+      "  box-shadow: 0 0 0 1px rgba(0,0,0,.08);",
       "}",
 
-      ".rbmo-biblioled-availability--reserved {",
-      "  color: #9a3412;",
-      "  background: #fff7ed;",
+      ".rbmo-biblioled-availability--available::before {",
+      "  background: #2e9d50;",
       "}",
 
-      ".rbmo-biblioled-availability--unknown {",
-      "  color: #475569;",
-      "  background: #f1f5f9;",
+      ".rbmo-biblioled-availability--reserved::before {",
+      "  background: #e4ad19;",
+      "}",
+
+      ".rbmo-biblioled-availability--unknown::before {",
+      "  background: #94a3b8;",
       "}",
 
       ".rbmo-biblioled-secondary {",
