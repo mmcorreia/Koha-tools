@@ -35,6 +35,10 @@
   var MAX_RESULTS = 50;
   var DEBUG = true;
 
+  /* Versão de diagnóstico para confirmar que o ficheiro novo foi carregado. */
+  var RBMO_BIBLIOLED_VERSION = "2026-08-30-availability-v3";
+  window._rbmo_biblioled_version = RBMO_BIBLIOLED_VERSION;
+
   function log() {
     if (!DEBUG || !window.console) {
       return;
@@ -1264,80 +1268,157 @@
   function getEditionAvailabilityLabel(resource) {
 
     /*
-     * 1. Preferir a disponibilidade enriquecida pelo Worker.
+     * PRIORIDADE ABSOLUTA:
+     * usar a disponibilidade enriquecida pelo Cloudflare Worker.
      *
-     * Esperado:
+     * Exemplo:
+     *
      * resource.availability = {
-     *   status: "available" | "unavailable" | "unknown",
-     *   available: 0|1|...,
-     *   next_available: "02/09/2026 às 22:44" | null
+     *   status: "available",
+     *   available: 1,
+     *   next_available: null
+     * }
+     *
+     * ou:
+     *
+     * resource.availability = {
+     *   status: "unavailable",
+     *   available: 0,
+     *   next_available: "02/09/2026 às 22:44"
      * }
      */
-    if (resource && resource.availability) {
-      var workerAvailability = resource.availability;
 
-      if (workerAvailability.status === "available") {
-        var availableCount = Number(workerAvailability.available || 0);
+    var workerAvailability =
+      resource && resource.availability
+        ? resource.availability
+        : null;
+
+    if (workerAvailability) {
+
+      var workerStatus =
+        normalizeText(
+          workerAvailability.status || ""
+        );
+
+      var workerAvailable =
+        Number(
+          workerAvailability.available || 0
+        );
+
+      if (workerStatus === "available") {
 
         return {
-          text: availableCount > 1
-            ? "Disponível · " + availableCount + " exemplares"
-            : "Disponível",
-          className: "rbmo-biblioled-availability rbmo-biblioled-availability--available"
+          text:
+            workerAvailable > 1
+              ? "Disponível · " +
+                workerAvailable +
+                " exemplares"
+              : "Disponível · 1 exemplar",
+
+          className:
+            "rbmo-biblioled-availability " +
+            "rbmo-biblioled-availability--available"
         };
       }
 
-      if (
-        workerAvailability.status === "unavailable" &&
-        workerAvailability.next_available
-      ) {
-        return {
-          text: "Disponível a partir de " + workerAvailability.next_available,
-          className: "rbmo-biblioled-availability rbmo-biblioled-availability--reserved"
-        };
-      }
+      if (workerStatus === "unavailable") {
 
-      if (workerAvailability.status === "unavailable") {
+        if (workerAvailability.next_available) {
+
+          return {
+            text:
+              "Disponível a partir de " +
+              cleanText(
+                workerAvailability.next_available
+              ),
+
+            className:
+              "rbmo-biblioled-availability " +
+              "rbmo-biblioled-availability--reserved"
+          };
+        }
+
         return {
-          text: "Indisponível neste momento",
-          className: "rbmo-biblioled-availability rbmo-biblioled-availability--reserved"
+          text:
+            "Indisponível neste momento",
+
+          className:
+            "rbmo-biblioled-availability " +
+            "rbmo-biblioled-availability--reserved"
         };
       }
     }
+
 
     /*
-     * 2. Fallback para os dados antigos da API.
+     * FALLBACK:
+     * mantém compatibilidade com versões antigas da API.
+     *
+     * Só é usado se o Worker não devolver availability.
      */
-    var availability = getAvailability(resource);
 
-    if (availability.available > 0) {
+    var legacyAvailability =
+      getAvailability(resource);
+
+    if (legacyAvailability.available > 0) {
+
       return {
-        text: availability.total > 1
-          ? "Disponível · " + availability.available + " de " + availability.total + " exemplares"
-          : "Disponível",
-        className: "rbmo-biblioled-availability rbmo-biblioled-availability--available"
+        text:
+          legacyAvailability.available > 1
+            ? "Disponível · " +
+              legacyAvailability.available +
+              " exemplares"
+            : "Disponível · 1 exemplar",
+
+        className:
+          "rbmo-biblioled-availability " +
+          "rbmo-biblioled-availability--available"
       };
     }
 
-    var nextReturn = getNextReturnDate(availability.returnDates);
+
+    var nextReturn =
+      getNextReturnDate(
+        legacyAvailability.returnDates
+      );
 
     if (nextReturn) {
+
       return {
-        text: "Disponível a partir de " + formatDate(nextReturn),
-        className: "rbmo-biblioled-availability rbmo-biblioled-availability--reserved"
+        text:
+          "Disponível a partir de " +
+          formatDate(nextReturn),
+
+        className:
+          "rbmo-biblioled-availability " +
+          "rbmo-biblioled-availability--reserved"
       };
     }
 
-    if (availability.state === "unavailable") {
+
+    if (
+      legacyAvailability.state ===
+      "unavailable"
+    ) {
+
       return {
-        text: "Indisponível neste momento",
-        className: "rbmo-biblioled-availability rbmo-biblioled-availability--reserved"
+        text:
+          "Indisponível neste momento",
+
+        className:
+          "rbmo-biblioled-availability " +
+          "rbmo-biblioled-availability--reserved"
       };
     }
+
 
     return {
-      text: "Disponibilidade desconhecida",
-      className: "rbmo-biblioled-availability rbmo-biblioled-availability--unknown"
+      text:
+        "Disponibilidade desconhecida",
+
+      className:
+        "rbmo-biblioled-availability " +
+        "rbmo-biblioled-availability--unknown"
     };
   }
 
@@ -1854,6 +1935,20 @@
               log(
                 "disponibilidade agregada:",
                 availability
+              );
+
+              log(
+                "disponibilidade por edição:",
+                detailedResources.map(function (resource) {
+                  return {
+                    id: resource.id,
+                    publisher:
+                      resource.publisher_name ||
+                      getResourcePublisher(resource),
+                    availability:
+                      resource.availability || null
+                  };
+                })
               );
 
               window._rbmo_biblioled = {
