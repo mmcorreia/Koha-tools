@@ -36,7 +36,7 @@
   var DEBUG = true;
 
   /* Versão de diagnóstico para confirmar que o ficheiro novo foi carregado. */
-  var RBMO_BIBLIOLED_VERSION = "2026-08-31-title-canonical-v15";
+  var RBMO_BIBLIOLED_VERSION = "2026-08-31-after-reservas-v16";
   window._rbmo_biblioled_version = RBMO_BIBLIOLED_VERSION;
 
   function log() {
@@ -2072,7 +2072,7 @@
     intro.className = "rbmo-biblioled-intro";
     intro.appendChild(
       document.createTextNode(
-        "Aceda a este título em formato ebook."
+        "Aceda a este título em formato ebook com o seu cartão de leitor."
       )
     );
 
@@ -2166,26 +2166,91 @@
   function getInsertTarget() {
 
     /*
-     * Preferência:
-     * inserir a BiblioLED no fim do próprio bloco #holdings,
-     * depois da tabela, totais e restantes informação dos
-     * exemplares físicos. Assim continua dentro do separador
-     * "Exemplares", mas sem concorrer visualmente com a coleção física.
+     * 1. Preferência absoluta:
+     * inserir depois da linha "Total de reservas".
+     *
+     * O Koha pode apresentar este texto em diferentes
+     * elementos conforme o template/versão, por isso
+     * procuramos pelo conteúdo textual.
      */
-    var holdingsContainer =
+    var holdings =
       document.querySelector("#holdings");
 
-    if (holdingsContainer) {
+    var searchRoot =
+      holdings && holdings.parentElement
+        ? holdings.parentElement
+        : document;
+
+    var candidates =
+      searchRoot.querySelectorAll(
+        "p, div, span, strong, td, th"
+      );
+
+    for (var i = 0; i < candidates.length; i++) {
+      var candidateText =
+        normalizeText(
+          candidates[i].textContent
+        );
+
+      if (
+        candidateText.indexOf(
+          "total de reservas"
+        ) !== -1
+      ) {
+        /*
+         * Evita selecionar um contentor grande que também
+         * contenha toda a tabela de exemplares.
+         */
+        var directText =
+          normalizeText(
+            Array.prototype
+              .filter.call(
+                candidates[i].childNodes,
+                function (node) {
+                  return (
+                    node.nodeType === 3 ||
+                    (
+                      node.nodeType === 1 &&
+                      !node.querySelector("table")
+                    )
+                  );
+                }
+              )
+              .map(function (node) {
+                return node.textContent || "";
+              })
+              .join(" ")
+          );
+
+        if (
+          directText.indexOf(
+            "total de reservas"
+          ) !== -1 ||
+          candidates[i].children.length <= 2
+        ) {
+          return {
+            element: candidates[i],
+            mode: "after"
+          };
+        }
+      }
+    }
+
+    /*
+     * 2. Fallback:
+     * se não encontrarmos "Total de reservas",
+     * inserir depois do contentor #holdings.
+     */
+    if (holdings) {
       return {
-        element: holdingsContainer,
-        mode: "append"
+        element: holdings,
+        mode: "after"
       };
     }
 
     /*
-     * Fallback para instalações/templates onde #holdings
-     * não existe: inserir imediatamente depois da tabela
-     * de exemplares.
+     * 3. Fallback adicional:
+     * inserir depois da tabela de exemplares.
      */
     var tableSelectors = [
       "#itemst",
@@ -2194,8 +2259,11 @@
       "table#holdingst"
     ];
 
-    for (var i = 0; i < tableSelectors.length; i++) {
-      var table = document.querySelector(tableSelectors[i]);
+    for (var t = 0; t < tableSelectors.length; t++) {
+      var table =
+        document.querySelector(
+          tableSelectors[t]
+        );
 
       if (table) {
         return {
@@ -2206,34 +2274,15 @@
     }
 
     /*
-     * Último fallback: procurar um título/legenda de exemplares
-     * e inserir depois do respetivo bloco parental.
+     * 4. Último fallback.
      */
-    var headings =
-      document.querySelectorAll("h2, h3, legend");
-
-    for (var h = 0; h < headings.length; h++) {
-      var headingText =
-        normalizeText(
-          headings[h].textContent
-        );
-
-      if (
-        headingText.indexOf("exemplares") !== -1 ||
-        headingText.indexOf("holdings") !== -1
-      ) {
-        return {
-          element:
-            headings[h].parentElement ||
-            headings[h],
-          mode: "after"
-        };
-      }
-    }
-
     var fallback =
-      document.querySelector("#catalogue_detail_biblio") ||
-      document.querySelector("#bibliodescriptions");
+      document.querySelector(
+        "#catalogue_detail_biblio"
+      ) ||
+      document.querySelector(
+        "#bibliodescriptions"
+      );
 
     if (fallback) {
       return {
@@ -2258,7 +2307,9 @@
         element
       );
     } else {
-      target.element.appendChild(element);
+      target.element.appendChild(
+        element
+      );
     }
 
     return true;
