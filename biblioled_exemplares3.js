@@ -1179,7 +1179,8 @@
 
       ".rbmo-biblioled-row--head {",
       "  font-size: 11.5px;",
-      "  color: #64748b;",
+      "  font-weight: 600;",
+      "  color: #475569;",
       "  padding-bottom: 6px;",
       "}",
 
@@ -1228,6 +1229,19 @@
       "}",
 
       ".rbmo-biblioled-link:hover {",
+      "  text-decoration: underline;",
+      "}",
+
+      ".rbmo-biblioled-about-link {",
+      "  display: inline-block;",
+      "  margin-left: 14px;",
+      "  font-size: 12px;",
+      "  color: #64748b;",
+      "  text-decoration: none;",
+      "}",
+
+      ".rbmo-biblioled-about-link:hover {",
+      "  color: #0076a3;",
       "  text-decoration: underline;",
       "}",
 
@@ -1627,8 +1641,16 @@
     link.href = getPublicSearchUrl(title, author);
     link.target = "_blank";
     link.rel = "noopener";
-    link.textContent = "Ver edições na BiblioLED";
+    link.textContent = "Ver na BiblioLED";
     panel.appendChild(link);
+
+    var aboutLink = document.createElement("a");
+    aboutLink.className = "rbmo-biblioled-about-link";
+    aboutLink.href = "https://aml.biblioled.gov.pt/about";
+    aboutLink.target = "_blank";
+    aboutLink.rel = "noopener";
+    aboutLink.textContent = "O que é a BiblioLED?";
+    panel.appendChild(aboutLink);
 
     card.appendChild(panel);
 
