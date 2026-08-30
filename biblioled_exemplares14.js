@@ -36,7 +36,7 @@
   var DEBUG = true;
 
   /* Versão de diagnóstico para confirmar que o ficheiro novo foi carregado. */
-  var RBMO_BIBLIOLED_VERSION = "2026-08-31-biblioled-logo-link-v11";
+  var RBMO_BIBLIOLED_VERSION = "2026-08-31-biblioled-after-holdings-v12";
   window._rbmo_biblioled_version = RBMO_BIBLIOLED_VERSION;
 
   function log() {
@@ -1204,13 +1204,10 @@
 
     style.textContent = [
       ".rbmo-biblioled-card {",
-      "  margin: 20px 0 16px 0;",
+      "  margin: 22px 0 8px 0;",
       "  padding: 14px 16px 12px 16px;",
       "  background: #fbfcfd;",
-      "  border-top: 1px solid #dfe5ea;",
-      "  border-bottom: 1px solid #dfe5ea;",
-      "  border-left: 0;",
-      "  border-right: 0;",
+      "  border: 0;",
       "  border-radius: 0;",
       "  font-size: 13px;",
       "  overflow: hidden;",
@@ -1467,7 +1464,7 @@
       "}",
 
       ".rbmo-biblioled-link-logo {",
-      "  height: 25px;",
+      "  height: 17px;",
       "  width: auto;",
       "  display: block;",
       "  flex: 0 0 auto;",
@@ -1899,37 +1896,69 @@
   }
 
   function getInsertTarget() {
-    var selectors = [
-      "#holdings",
+
+    /*
+     * Preferência:
+     * inserir a BiblioLED no fim do próprio bloco #holdings,
+     * depois da tabela, totais e restantes informação dos
+     * exemplares físicos. Assim continua dentro do separador
+     * "Exemplares", mas sem concorrer visualmente com a coleção física.
+     */
+    var holdingsContainer =
+      document.querySelector("#holdings");
+
+    if (holdingsContainer) {
+      return {
+        element: holdingsContainer,
+        mode: "append"
+      };
+    }
+
+    /*
+     * Fallback para instalações/templates onde #holdings
+     * não existe: inserir imediatamente depois da tabela
+     * de exemplares.
+     */
+    var tableSelectors = [
       "#itemst",
       "#itemholdingst",
       ".holdingst",
-      "#bibliodescriptions + #holdings",
       "table#holdingst"
     ];
 
-    for (var i = 0; i < selectors.length; i++) {
-      var node = document.querySelector(selectors[i]);
-      if (node) {
+    for (var i = 0; i < tableSelectors.length; i++) {
+      var table = document.querySelector(tableSelectors[i]);
+
+      if (table) {
         return {
-          element: node,
-          mode: "before"
+          element: table,
+          mode: "after"
         };
       }
     }
 
-    var headings = document.querySelectorAll("h2, h3, legend");
+    /*
+     * Último fallback: procurar um título/legenda de exemplares
+     * e inserir depois do respetivo bloco parental.
+     */
+    var headings =
+      document.querySelectorAll("h2, h3, legend");
 
     for (var h = 0; h < headings.length; h++) {
-      var headingText = normalizeText(headings[h].textContent);
+      var headingText =
+        normalizeText(
+          headings[h].textContent
+        );
 
       if (
         headingText.indexOf("exemplares") !== -1 ||
         headingText.indexOf("holdings") !== -1
       ) {
         return {
-          element: headings[h],
-          mode: "before"
+          element:
+            headings[h].parentElement ||
+            headings[h],
+          mode: "after"
         };
       }
     }
@@ -1955,8 +1984,11 @@
       return false;
     }
 
-    if (target.mode === "before") {
-      target.element.insertAdjacentElement("beforebegin", element);
+    if (target.mode === "after") {
+      target.element.insertAdjacentElement(
+        "afterend",
+        element
+      );
     } else {
       target.element.appendChild(element);
     }
@@ -1996,7 +2028,7 @@
 
     if (!placeElementAtTarget(createPlaceholder())) {
       warn(
-        "não foi encontrado o local dos exemplares para inserir o indicador de carregamento."
+        "não foi encontrado o fim do bloco de exemplares para inserir o indicador de carregamento."
       );
     }
   }
@@ -2037,31 +2069,11 @@
 
     if (!placeElementAtTarget(element)) {
       warn(
-        "não foi encontrado o local dos exemplares para inserir o cartão."
+        "não foi encontrado o fim do bloco de exemplares para inserir o cartão BiblioLED."
       );
       return;
     }
 
-    var holdingsTarget = getInsertTarget();
-
-    if (
-      holdingsTarget &&
-      holdingsTarget.element &&
-      !document.getElementById("rbmo-physical-holdings-title")
-    ) {
-      var physicalTitle = document.createElement("h2");
-      physicalTitle.id = "rbmo-physical-holdings-title";
-      physicalTitle.textContent = "Exemplares físicos";
-      physicalTitle.style.fontSize = "17px";
-      physicalTitle.style.fontWeight = "600";
-      physicalTitle.style.margin = "16px 0 10px 0";
-      physicalTitle.style.color = "#1f2937";
-
-      holdingsTarget.element.insertAdjacentElement(
-        "beforebegin",
-        physicalTitle
-      );
-    }
   }
 
   function init() {
