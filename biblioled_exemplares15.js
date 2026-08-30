@@ -36,7 +36,7 @@
   var DEBUG = true;
 
   /* Versão de diagnóstico para confirmar que o ficheiro novo foi carregado. */
-  var RBMO_BIBLIOLED_VERSION = "2026-08-31-biblioled-after-holdings-v12";
+  var RBMO_BIBLIOLED_VERSION = "2026-08-31-biblioled-covers-v13";
   window._rbmo_biblioled_version = RBMO_BIBLIOLED_VERSION;
 
   function log() {
@@ -1383,10 +1383,32 @@
 
       ".rbmo-biblioled-row {",
       "  display: grid;",
-      "  grid-template-columns: 0.55fr 1.25fr 1.5fr;",
+      "  grid-template-columns: 46px 0.55fr 1.25fr 1.5fr;",
       "  gap: 14px;",
       "  padding: 9px 8px;",
       "  align-items: center;",
+      "}",
+
+      ".rbmo-biblioled-cover-cell {",
+      "  width: 42px;",
+      "  min-height: 60px;",
+      "  display: flex;",
+      "  align-items: center;",
+      "  justify-content: center;",
+      "}",
+
+      ".rbmo-biblioled-cover {",
+      "  width: 40px;",
+      "  height: 58px;",
+      "  object-fit: cover;",
+      "  border-radius: 2px;",
+      "  box-shadow: 0 1px 3px rgba(15,23,42,.16);",
+      "  display: block;",
+      "}",
+
+      ".rbmo-biblioled-cover-placeholder {",
+      "  width: 40px;",
+      "  height: 58px;",
       "}",
 
       ".rbmo-biblioled-row + .rbmo-biblioled-row {",
@@ -1472,6 +1494,23 @@
 
       ".rbmo-biblioled-link:hover {",
       "  text-decoration: underline;",
+      "}",
+
+      "@media (max-width: 700px) {",
+      "  .rbmo-biblioled-row {",
+      "    grid-template-columns: 40px 0.5fr 1fr 1.25fr;",
+      "    gap: 8px;",
+      "    padding-left: 2px;",
+      "    padding-right: 2px;",
+      "  }",
+      "  .rbmo-biblioled-cover {",
+      "    width: 36px;",
+      "    height: 52px;",
+      "  }",
+      "  .rbmo-biblioled-cover-cell,",
+      "  .rbmo-biblioled-cover-placeholder {",
+      "    width: 36px;",
+      "  }",
       "}",
 
       ".rbmo-biblioled-return {",
@@ -1665,43 +1704,195 @@
     };
   }
 
-  function createEditionRow(resource) {
+  function createEditionRow(
+    resource,
+    showCover
+  ) {
     var row = document.createElement("div");
     row.className = "rbmo-biblioled-row";
 
-    var year = document.createElement("span");
-    year.className = "rbmo-biblioled-secondary";
-    year.textContent = getResourceYear(resource) || "—";
-    row.appendChild(year);
+    var coverCell =
+      document.createElement("div");
 
-    var publisher = getResourcePublisher(resource) || "Edição";
+    coverCell.className =
+      "rbmo-biblioled-cover-cell";
 
-    if (resource.link) {
-      var publisherLink = document.createElement("a");
-      publisherLink.href = resource.link;
-      publisherLink.target = "_blank";
-      publisherLink.rel = "noopener";
-      publisherLink.className = "rbmo-biblioled-edition-link";
-      publisherLink.textContent = publisher;
-      row.appendChild(publisherLink);
-    } else {
-      var publisherCell = document.createElement("span");
-      publisherCell.textContent = publisher;
-      row.appendChild(publisherCell);
+    if (showCover) {
+      var coverUrl =
+        resource.cover ||
+        resource.cover_large ||
+        "";
+
+      if (coverUrl) {
+        var cover =
+          document.createElement("img");
+
+        cover.className =
+          "rbmo-biblioled-cover";
+
+        cover.src =
+          coverUrl;
+
+        cover.alt = "";
+
+        cover.setAttribute(
+          "aria-hidden",
+          "true"
+        );
+
+        cover.onerror =
+          function () {
+            coverCell.innerHTML = "";
+            var placeholder =
+              document.createElement("span");
+            placeholder.className =
+              "rbmo-biblioled-cover-placeholder";
+            coverCell.appendChild(
+              placeholder
+            );
+          };
+
+        coverCell.appendChild(
+          cover
+        );
+      } else {
+        var placeholder =
+          document.createElement("span");
+
+        placeholder.className =
+          "rbmo-biblioled-cover-placeholder";
+
+        coverCell.appendChild(
+          placeholder
+        );
+      }
     }
 
-    var availabilityInfo = getEditionAvailabilityLabel(resource);
-    var availabilityCell = document.createElement("span");
-    availabilityCell.className = availabilityInfo.className;
-    availabilityCell.textContent = availabilityInfo.text;
-    row.appendChild(availabilityCell);
+    row.appendChild(
+      coverCell
+    );
+
+    var year =
+      document.createElement("span");
+
+    year.className =
+      "rbmo-biblioled-secondary";
+
+    year.textContent =
+      getResourceYear(resource) ||
+      "—";
+
+    row.appendChild(year);
+
+    var publisher =
+      getResourcePublisher(resource) ||
+      "Edição";
+
+    if (resource.link) {
+      var publisherLink =
+        document.createElement("a");
+
+      publisherLink.href =
+        resource.link;
+
+      publisherLink.target =
+        "_blank";
+
+      publisherLink.rel =
+        "noopener";
+
+      publisherLink.className =
+        "rbmo-biblioled-edition-link";
+
+      publisherLink.textContent =
+        publisher;
+
+      row.appendChild(
+        publisherLink
+      );
+    } else {
+      var publisherCell =
+        document.createElement("span");
+
+      publisherCell.textContent =
+        publisher;
+
+      row.appendChild(
+        publisherCell
+      );
+    }
+
+    var availabilityInfo =
+      getEditionAvailabilityLabel(
+        resource
+      );
+
+    var availabilityCell =
+      document.createElement("span");
+
+    availabilityCell.className =
+      availabilityInfo.className;
+
+    availabilityCell.textContent =
+      availabilityInfo.text;
+
+    row.appendChild(
+      availabilityCell
+    );
 
     return row;
+  }
+
+  function getEditionCoverKey(resource) {
+    return cleanText(
+      resource &&
+      (
+        resource.cover ||
+        resource.cover_large ||
+        ""
+      )
+    );
+  }
+
+  function shouldShowEditionCovers(resources) {
+    var covers =
+      resources
+        .map(getEditionCoverKey)
+        .filter(Boolean);
+
+    if (!covers.length) {
+      return false;
+    }
+
+    /*
+     * Se todas as edições usam exatamente a mesma capa,
+     * não repetimos a imagem em todas as linhas.
+     */
+    var uniqueCovers =
+      covers.filter(function (
+        cover,
+        index,
+        array
+      ) {
+        return (
+          array.indexOf(cover) ===
+          index
+        );
+      });
+
+    return (
+      uniqueCovers.length > 1 ||
+      resources.length === 1
+    );
   }
 
   function createHeadRow() {
     var row = document.createElement("div");
     row.className = "rbmo-biblioled-row rbmo-biblioled-row--head";
+
+    row.appendChild(
+      document.createElement("span")
+    );
 
     ["Ano", "Editora", "Disponibilidade"].forEach(function (label) {
       var cell = document.createElement("span");
@@ -1852,8 +2043,18 @@
 
     panel.appendChild(createHeadRow());
 
+    var showEditionCovers =
+      shouldShowEditionCovers(
+        resources
+      );
+
     resources.forEach(function (resource) {
-      panel.appendChild(createEditionRow(resource));
+      panel.appendChild(
+        createEditionRow(
+          resource,
+          showEditionCovers
+        )
+      );
     });
 
     var matchedSearchData =
