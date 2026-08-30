@@ -1467,7 +1467,7 @@
       "}",
 
       ".rbmo-biblioled-link-logo {",
-      "  height: 17px;",
+      "  height: 25px;",
       "  width: auto;",
       "  display: block;",
       "  flex: 0 0 auto;",
