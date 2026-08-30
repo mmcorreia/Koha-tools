@@ -1262,6 +1262,52 @@
   }
 
   function getEditionAvailabilityLabel(resource) {
+
+    /*
+     * 1. Preferir a disponibilidade enriquecida pelo Worker.
+     *
+     * Esperado:
+     * resource.availability = {
+     *   status: "available" | "unavailable" | "unknown",
+     *   available: 0|1|...,
+     *   next_available: "02/09/2026 às 22:44" | null
+     * }
+     */
+    if (resource && resource.availability) {
+      var workerAvailability = resource.availability;
+
+      if (workerAvailability.status === "available") {
+        var availableCount = Number(workerAvailability.available || 0);
+
+        return {
+          text: availableCount > 1
+            ? "Disponível · " + availableCount + " exemplares"
+            : "Disponível",
+          className: "rbmo-biblioled-availability rbmo-biblioled-availability--available"
+        };
+      }
+
+      if (
+        workerAvailability.status === "unavailable" &&
+        workerAvailability.next_available
+      ) {
+        return {
+          text: "Disponível a partir de " + workerAvailability.next_available,
+          className: "rbmo-biblioled-availability rbmo-biblioled-availability--reserved"
+        };
+      }
+
+      if (workerAvailability.status === "unavailable") {
+        return {
+          text: "Indisponível neste momento",
+          className: "rbmo-biblioled-availability rbmo-biblioled-availability--reserved"
+        };
+      }
+    }
+
+    /*
+     * 2. Fallback para os dados antigos da API.
+     */
     var availability = getAvailability(resource);
 
     if (availability.available > 0) {
@@ -1277,14 +1323,14 @@
 
     if (nextReturn) {
       return {
-        text: "Reservado até " + formatDate(nextReturn),
+        text: "Disponível a partir de " + formatDate(nextReturn),
         className: "rbmo-biblioled-availability rbmo-biblioled-availability--reserved"
       };
     }
 
     if (availability.state === "unavailable") {
       return {
-        text: "Indisponível",
+        text: "Indisponível neste momento",
         className: "rbmo-biblioled-availability rbmo-biblioled-availability--reserved"
       };
     }
