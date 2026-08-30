@@ -1849,7 +1849,7 @@
     intro.className = "rbmo-biblioled-intro";
     intro.appendChild(
       document.createTextNode(
-        "Aceda a este título em formato ebook com o seu cartão de leitor."
+        "Aceda a este título em formato ebook."
       )
     );
 
