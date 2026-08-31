@@ -36,7 +36,7 @@
   var DEBUG = true;
 
   /* Versão de diagnóstico para confirmar que o ficheiro novo foi carregado. */
-  var RBMO_BIBLIOLED_VERSION = "2026-08-31-after-reservas-v16";
+  var RBMO_BIBLIOLED_VERSION = "2026-08-31-after-reservas-inside-v18";
   window._rbmo_biblioled_version = RBMO_BIBLIOLED_VERSION;
 
   function log() {
@@ -2166,70 +2166,68 @@
   function getInsertTarget() {
 
     /*
-     * 1. Preferência absoluta:
-     * inserir depois da linha "Total de reservas".
-     *
-     * O Koha pode apresentar este texto em diferentes
-     * elementos conforme o template/versão, por isso
-     * procuramos pelo conteúdo textual.
+     * Procurar o TEXTO exato "Total de reservas" dentro da
+     * zona dos exemplares. Usamos um TreeWalker para chegar
+     * ao nó de texto mais pequeno possível e evitar selecionar
+     * um contentor grande que englobe toda a caixa.
      */
     var holdings =
       document.querySelector("#holdings");
 
-    var searchRoot =
-      holdings && holdings.parentElement
-        ? holdings.parentElement
-        : document;
+    var root =
+      holdings ||
+      document.querySelector("#bibliodescriptions") ||
+      document.body;
 
-    var candidates =
-      searchRoot.querySelectorAll(
-        "p, div, span, strong, td, th"
-      );
-
-    for (var i = 0; i < candidates.length; i++) {
-      var candidateText =
-        normalizeText(
-          candidates[i].textContent
+    if (root) {
+      var walker =
+        document.createTreeWalker(
+          root,
+          NodeFilter.SHOW_TEXT,
+          null,
+          false
         );
 
-      if (
-        candidateText.indexOf(
-          "total de reservas"
-        ) !== -1
-      ) {
-        /*
-         * Evita selecionar um contentor grande que também
-         * contenha toda a tabela de exemplares.
-         */
-        var directText =
+      var node;
+
+      while ((node = walker.nextNode())) {
+        var nodeText =
           normalizeText(
-            Array.prototype
-              .filter.call(
-                candidates[i].childNodes,
-                function (node) {
-                  return (
-                    node.nodeType === 3 ||
-                    (
-                      node.nodeType === 1 &&
-                      !node.querySelector("table")
-                    )
-                  );
-                }
-              )
-              .map(function (node) {
-                return node.textContent || "";
-              })
-              .join(" ")
+            node.nodeValue || ""
           );
 
         if (
-          directText.indexOf(
+          nodeText.indexOf(
             "total de reservas"
-          ) !== -1 ||
-          candidates[i].children.length <= 2
+          ) === -1
+        ) {
+          continue;
+        }
+
+        var element =
+          node.parentElement;
+
+        /*
+         * Subimos apenas até ao primeiro contentor de bloco
+         * adequado (p/div/li/td), mantendo-nos dentro de #holdings.
+         */
+        while (
+          element &&
+          element !== root &&
+          !/^(P|DIV|LI|TD)$/i.test(
+            element.tagName || ""
+          )
+        ) {
+          element =
+            element.parentElement;
+        }
+
+        if (
+          element &&
+          element !== root
         ) {
           return {
-            element: candidates[i],
+            element: element,
             mode: "after"
           };
         }
@@ -2237,56 +2235,13 @@
     }
 
     /*
-     * 2. Fallback:
-     * se não encontrarmos "Total de reservas",
-     * inserir depois do contentor #holdings.
+     * Fallback: se não encontrarmos "Total de reservas",
+     * inserir no fim de #holdings, que permanece dentro da
+     * caixa dos exemplares.
      */
     if (holdings) {
       return {
         element: holdings,
-        mode: "after"
-      };
-    }
-
-    /*
-     * 3. Fallback adicional:
-     * inserir depois da tabela de exemplares.
-     */
-    var tableSelectors = [
-      "#itemst",
-      "#itemholdingst",
-      ".holdingst",
-      "table#holdingst"
-    ];
-
-    for (var t = 0; t < tableSelectors.length; t++) {
-      var table =
-        document.querySelector(
-          tableSelectors[t]
-        );
-
-      if (table) {
-        return {
-          element: table,
-          mode: "after"
-        };
-      }
-    }
-
-    /*
-     * 4. Último fallback.
-     */
-    var fallback =
-      document.querySelector(
-        "#catalogue_detail_biblio"
-      ) ||
-      document.querySelector(
-        "#bibliodescriptions"
-      );
-
-    if (fallback) {
-      return {
-        element: fallback,
         mode: "append"
       };
     }
@@ -2295,9 +2250,13 @@
   }
 
   function placeElementAtTarget(element) {
-    var target = getInsertTarget();
+    var target =
+      getInsertTarget();
 
-    if (!target || !target.element) {
+    if (
+      !target ||
+      !target.element
+    ) {
       return false;
     }
 
