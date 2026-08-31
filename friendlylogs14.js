@@ -1,12 +1,72 @@
 /* ==============================================================
-   USER FRIENDLY LOGS — Koha
-   Versão melhorada: exemplares + registos bibliográficos
+   INTRANET_CATALOGUING_CHANGES
+   Versão 1.0
+   Autor: Miguel Mimoso Correia
+
+   Finalidade
+   ----------
+   Melhora a leitura das alterações de catalogação registadas pelo
+   Koha no interface dos técnicos, apresentando de forma amigável
+   o estado Antes / Depois de alterações a registos bibliográficos
+   e exemplares.
+
+   Página-alvo
+   -----------
+   /cgi-bin/koha/tools/viewlog.pl
+
+   Âmbito
+   ------
+   - Registos bibliográficos.
+   - Exemplares.
+   - Eventos ADD, MODIFY e DELETE registados pelo CataloguingLog.
+
+   Principais funcionalidades
+   --------------------------
+   - Identifica eventos relativos a exemplares e registos bibliográficos.
+   - Reconstrói, sempre que possível, o estado imediatamente anterior e
+     posterior de cada evento através do histórico de action_logs.
+   - Usa o estado atual apenas como fallback quando o histórico não permite
+     reconstruir o evento de forma segura.
+   - Traduz campos e estados técnicos para designações legíveis.
+   - Obtém, quando necessário, o estado atual do exemplar através da API.
+   - Obtém, quando necessário, o registo bibliográfico atual através da API
+     REST ou da exportação MARCXML do Koha.
+   - Apresenta diferenças de forma estruturada, distinguindo valores
+     adicionados, alterados e removidos.
+   - Nos exemplares, compara dinamicamente todos os campos registados no log,
+     mesmo que ainda não tenham uma etiqueta amigável definida.
+   - Nos registos bibliográficos, compara dinamicamente os campos MARC/UNIMARC,
+     incluindo ocorrências repetidas.
+   - Mantém acesso aos dados técnicos originais registados pelo Koha.
+   - Normaliza a indicação da interface de origem do evento
+     (Técnico, OPAC, API, SIP2 ou Sistema).
+   - Reaplica automaticamente a transformação após paginação, pesquisa,
+     ordenação ou atualização das tabelas DataTables.
+
+   Dependências
+   ------------
+   - jQuery, já disponível no backoffice do Koha.
+   - REST API / exportação bibliográfica do próprio Koha.
+   - Font Awesome, para os ícones apresentados nos cartões.
+
+   Instalação
+   ----------
+   Destinado ao IntranetUserJS do Koha.
+   Inserir apenas o JavaScript, sem tags <script>.
+
+   Compatibilidade
+   ---------------
+   Desenvolvido para o backoffice Koha utilizado pela RBMO.
    ============================================================== */
 
 (function () {
   'use strict';
 
   if (!location.href.includes('/cgi-bin/koha/tools/viewlog.pl')) return;
+
+  if (window.INTRANET_CATALOGUING_CHANGES_ACTIVE) return;
+  window.INTRANET_CATALOGUING_CHANGES_ACTIVE = true;
+  window.INTRANET_CATALOGUING_CHANGES_VERSION = '1.1';
 
   /* --------------------------------------------------------------
      CONFIGURAÇÃO
@@ -394,6 +454,403 @@
     return 'generic';
   }
 
+
+  /* --------------------------------------------------------------
+     HISTÓRICO DE ACTION_LOGS
+     -------------------------------------------------------------- */
+
+  const ACTION_LOGS_PAGE_SIZE = 100;
+  const actionLogsCache = new Map();
+
+  function normaliseAction(action) {
+    const value = String(action || '').trim().toUpperCase();
+
+    if (/ADD|ADICION|CRIAR|CREATE/.test(value)) return 'ADD';
+    if (/DELETE|ELIMIN|REMOV/.test(value)) return 'DELETE';
+    if (/MODIFY|MODIFIC|ALTER/.test(value)) return 'MODIFY';
+
+    return value;
+  }
+
+  function logTypeFromRaw(raw) {
+    const text = String(raw || '');
+
+    if (
+      /\bitem\s+\$VAR/i.test(text) ||
+      /\bitemnumber\b/i.test(text) ||
+      /\bitem_id\b/i.test(text)
+    ) {
+      return 'item';
+    }
+
+    if (
+      /\bbiblio(?:graphic)?\s+\$VAR/i.test(text) ||
+      /\bbiblionumber\b/i.test(text) ||
+      /\bmarcxml\b/i.test(text) ||
+      /<(?:record|marc:record)\b/i.test(text)
+    ) {
+      return 'biblio';
+    }
+
+    return 'generic';
+  }
+
+  function actionLogInfo(log) {
+    if (!log) return '';
+    return String(log.info ?? log.information ?? '');
+  }
+
+  function actionLogId(log) {
+    const value = log?.action_id ?? log?.id ?? 0;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  function actionLogTimestamp(log) {
+    const value = log?.timestamp ?? log?.time ?? '';
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function parseDisplayedKohaDate(text) {
+    const value = String(text || '').trim();
+    if (!value) return null;
+
+    let parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) return parsed;
+
+    const m = value.match(
+      /(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})[,\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?/
+    );
+
+    if (!m) return null;
+
+    const day = Number(m[1]);
+    const month = Number(m[2]) - 1;
+    const year = Number(m[3]);
+    const hour = Number(m[4]);
+    const minute = Number(m[5]);
+    const second = Number(m[6] || 0);
+
+    const date = new Date(year, month, day, hour, minute, second);
+    const time = date.getTime();
+
+    return Number.isFinite(time) ? time : null;
+  }
+
+  function extractActionIdFromRow(row) {
+    let value =
+      row.attr('data-action-id') ||
+      row.data('action-id') ||
+      row.data('action_id');
+
+    if (value && /^\d+$/.test(String(value))) {
+      return Number(value);
+    }
+
+    let found = null;
+
+    row.find('a[href]').each(function () {
+      const href = $(this).attr('href') || '';
+      const match = href.match(/[?&](?:action_id|id)=([0-9]+)/i);
+
+      if (match) {
+        found = Number(match[1]);
+        return false;
+      }
+    });
+
+    return found;
+  }
+
+  async function fetchCataloguingLogs(objectId) {
+    if (!objectId) return [];
+
+    const cacheKey = String(objectId);
+
+    if (actionLogsCache.has(cacheKey)) {
+      return actionLogsCache.get(cacheKey);
+    }
+
+    const promise = (async function () {
+      const all = [];
+      let page = 1;
+
+      while (page <= 1000) {
+        const params = new URLSearchParams();
+        params.set('module', 'CATALOGUING');
+        params.set('object', String(objectId));
+        params.set('_match', 'exact');
+        params.set('_order_by', '+action_id');
+        params.set('_page', String(page));
+        params.set('_per_page', String(ACTION_LOGS_PAGE_SIZE));
+
+        let response;
+
+        try {
+          response = await fetch(`/api/v1/action_logs?${params.toString()}`, {
+            credentials: 'same-origin',
+            headers: { Accept: 'application/json' }
+          });
+        } catch (e) {
+          return [];
+        }
+
+        if (!response.ok) {
+          return [];
+        }
+
+        let batch;
+
+        try {
+          batch = await response.json();
+        } catch (e) {
+          return [];
+        }
+
+        if (!Array.isArray(batch)) {
+          return [];
+        }
+
+        all.push(...batch);
+
+        if (batch.length < ACTION_LOGS_PAGE_SIZE) {
+          break;
+        }
+
+        page++;
+      }
+
+      return all.sort(function (a, b) {
+        return actionLogId(a) - actionLogId(b);
+      });
+    })();
+
+    actionLogsCache.set(cacheKey, promise);
+
+    return promise;
+  }
+
+  function findCurrentActionLog(logs, options) {
+    const expectedType = options.type;
+    const expectedAction = normaliseAction(options.action);
+    const rawComparable = comparable(options.raw);
+    const displayedTime = parseDisplayedKohaDate(options.dateText);
+    const directId = options.actionId;
+
+    let candidates = (logs || []).filter(function (log) {
+      if (normaliseAction(log.action) !== expectedAction) return false;
+
+      const detected = logTypeFromRaw(actionLogInfo(log));
+
+      return detected === expectedType || detected === 'generic';
+    });
+
+    if (!candidates.length) {
+      candidates = (logs || []).filter(function (log) {
+        return normaliseAction(log.action) === expectedAction;
+      });
+    }
+
+    if (directId) {
+      const direct = candidates.find(function (log) {
+        return actionLogId(log) === Number(directId);
+      });
+
+      if (direct) return direct;
+    }
+
+    const exact = candidates.filter(function (log) {
+      return comparable(actionLogInfo(log)) === rawComparable;
+    });
+
+    if (exact.length === 1) {
+      return exact[0];
+    }
+
+    const pool = exact.length ? exact : candidates;
+
+    if (displayedTime !== null && pool.length) {
+      let best = null;
+      let bestDistance = Infinity;
+
+      pool.forEach(function (log) {
+        const timestamp = actionLogTimestamp(log);
+        if (timestamp === null) return;
+
+        const distance = Math.abs(timestamp - displayedTime);
+
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          best = log;
+        }
+      });
+
+      if (best) return best;
+    }
+
+    if (pool.length) {
+      return pool.reduce(function (latest, log) {
+        return actionLogId(log) > actionLogId(latest) ? log : latest;
+      });
+    }
+
+    return null;
+  }
+
+  function previousActionLog(logs, currentLog, type) {
+    if (!currentLog) return null;
+
+    const currentId = actionLogId(currentLog);
+
+    const candidates = (logs || []).filter(function (log) {
+      if (actionLogId(log) >= currentId) return false;
+
+      const detected = logTypeFromRaw(actionLogInfo(log));
+
+      return detected === type || detected === 'generic';
+    });
+
+    if (!candidates.length) return null;
+
+    return candidates.reduce(function (latest, log) {
+      return actionLogId(log) > actionLogId(latest) ? log : latest;
+    });
+  }
+
+  async function getEventHistory(options) {
+    const objectId = options.objectId;
+    if (!objectId) return null;
+
+    const logs = await fetchCataloguingLogs(objectId);
+    if (!logs.length) return null;
+
+    const currentLog = findCurrentActionLog(logs, options);
+    if (!currentLog) return null;
+
+    const action = normaliseAction(options.action);
+    const currentRaw = actionLogInfo(currentLog) || options.raw;
+    const previousLog = previousActionLog(logs, currentLog, options.type);
+
+    if (action === 'ADD') {
+      return {
+        mode: 'history',
+        currentLog: currentLog,
+        previousLog: null,
+        beforeRaw: '',
+        afterRaw: currentRaw,
+        action: action
+      };
+    }
+
+    if (action === 'DELETE') {
+      return {
+        mode: 'history',
+        currentLog: currentLog,
+        previousLog: previousLog,
+        beforeRaw: currentRaw || actionLogInfo(previousLog),
+        afterRaw: '',
+        action: action
+      };
+    }
+
+    return {
+      mode: 'history',
+      currentLog: currentLog,
+      previousLog: previousLog,
+      beforeRaw: previousLog ? actionLogInfo(previousLog) : '',
+      afterRaw: currentRaw,
+      action: action
+    };
+  }
+
+  function humaniseTechnicalKey(key) {
+    const value = String(key || '')
+      .replace(/[_\-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!value) return 'Campo';
+
+    return value.charAt(0).toUpperCase() + value.slice(1);
+  }
+
+  function canonicaliseItemSnapshot(snapshot) {
+    const out = {};
+
+    Object.keys(snapshot || {}).forEach(function (key) {
+      const canonical = canonicalItemKey(key);
+
+      if (
+        out[canonical] === undefined ||
+        out[canonical] === null ||
+        out[canonical] === ''
+      ) {
+        out[canonical] = snapshot[key];
+      }
+    });
+
+    return out;
+  }
+
+  function friendlyItemLabel(key) {
+    if (ITEM_FIELD_LABELS[key]) return ITEM_FIELD_LABELS[key];
+
+    const original = Object.keys(ITEM_FIELD_LABELS).find(function (candidate) {
+      return canonicalItemKey(candidate) === key;
+    });
+
+    if (original) return ITEM_FIELD_LABELS[original];
+
+    return humaniseTechnicalKey(key);
+  }
+
+  function itemChangeType(before, after) {
+    const beforeEmpty = comparable(before) === '';
+    const afterEmpty = comparable(after) === '';
+
+    if (beforeEmpty && !afterEmpty) return 'added';
+    if (!beforeEmpty && afterEmpty) return 'removed';
+    return 'changed';
+  }
+
+  function buildItemHistoryRows(beforeSnapshot, afterSnapshot) {
+    const before = canonicaliseItemSnapshot(beforeSnapshot || {});
+    const after = canonicaliseItemSnapshot(afterSnapshot || {});
+    const rows = [];
+
+    const preferred = ITEM_DISPLAY_FIELDS.map(canonicalItemKey);
+    const allKeys = Array.from(
+      new Set([
+        ...preferred,
+        ...Object.keys(before),
+        ...Object.keys(after)
+      ])
+    );
+
+    allKeys.forEach(function (key) {
+      const hasBefore = Object.prototype.hasOwnProperty.call(before, key);
+      const hasAfter = Object.prototype.hasOwnProperty.call(after, key);
+
+      if (!hasBefore && !hasAfter) return;
+
+      const beforeRaw = hasBefore ? before[key] : '';
+      const afterRaw = hasAfter ? after[key] : '';
+
+      if (comparable(beforeRaw) === comparable(afterRaw)) return;
+
+      rows.push({
+        field: friendlyItemLabel(key),
+        code: key,
+        before: translateItemValue(key, beforeRaw),
+        after: translateItemValue(key, afterRaw),
+        change: itemChangeType(beforeRaw, afterRaw)
+      });
+    });
+
+    return dedupeRows(rows);
+  }
+
   /* --------------------------------------------------------------
      EXEMPLARES
      -------------------------------------------------------------- */
@@ -430,39 +887,15 @@
   }
 
   function buildItemRows(logSnapshot, current) {
-    const rows = [];
-    const emitted = new Set();
+    const currentSnapshot = {};
 
-    if (!current) return rows;
-
-    ITEM_DISPLAY_FIELDS.forEach(function (key) {
-      const canonical = canonicalItemKey(key);
-      if (emitted.has(canonical)) return;
-
-      const logRaw = logSnapshot[key];
-      const currentRaw = valueFromCurrentItem(current, key);
-
-      const logExists = logRaw !== undefined && logRaw !== null;
-
-      // Só mostrar campos que o próprio evento do log contém.
-      // Um campo ausente no log NÃO significa que nesse evento tenha passado
-      // de vazio para o valor atual; significa apenas que o Koha não o registou
-      // nesse evento.
-      if (!logExists) return;
-
-      if (comparable(logRaw) === comparable(currentRaw)) return;
-
-      emitted.add(canonical);
-
-      rows.push({
-        field: ITEM_FIELD_LABELS[key] || key,
-        code: canonical,
-        before: translateItemValue(key, logRaw),
-        after: translateItemValue(key, currentRaw)
+    if (current) {
+      ITEM_DISPLAY_FIELDS.forEach(function (key) {
+        currentSnapshot[canonicalItemKey(key)] = valueFromCurrentItem(current, key);
       });
-    });
+    }
 
-    return dedupeRows(rows);
+    return buildItemHistoryRows(logSnapshot || {}, currentSnapshot);
   }
 
   /* --------------------------------------------------------------
@@ -821,67 +1254,118 @@
     ].join('|');
   }
 
+  function marcFieldSimilarity(oldField, newField) {
+    if (!oldField || !newField || oldField.tag !== newField.tag) return -1;
+
+    let score = 0;
+
+    if ((oldField.ind1 || '') === (newField.ind1 || '')) score += 1;
+    if ((oldField.ind2 || '') === (newField.ind2 || '')) score += 1;
+
+    const oldCodes = (oldField.subfields || []).map(s => s.code).join('');
+    const newCodes = (newField.subfields || []).map(s => s.code).join('');
+
+    if (oldCodes === newCodes) score += 3;
+
+    const oldValues = new Set(
+      (oldField.subfields || []).map(s => `${s.code}|${comparable(s.value)}`)
+    );
+
+    (newField.subfields || []).forEach(function (sub) {
+      if (oldValues.has(`${sub.code}|${comparable(sub.value)}`)) {
+        score += 2;
+      }
+    });
+
+    if (
+      (!oldField.subfields || !oldField.subfields.length) &&
+      (!newField.subfields || !newField.subfields.length)
+    ) {
+      score += 2;
+    }
+
+    return score;
+  }
+
   function pairRepeatedFields(oldList, newList) {
     const pairs = [];
+    const usedOld = new Set();
     const usedNew = new Set();
 
     /*
-     * 1.º tenta encontrar uma ocorrência exatamente igual.
+     * 1.º remove ocorrências exatamente iguais.
      */
     oldList.forEach(function (oldField, oldIndex) {
       const sig = fieldSignature(oldField);
-      const exactIndex = newList.findIndex(function (newField, index) {
-        return !usedNew.has(index) && fieldSignature(newField) === sig;
+
+      const exactIndex = newList.findIndex(function (newField, newIndex) {
+        return !usedNew.has(newIndex) && fieldSignature(newField) === sig;
       });
 
       if (exactIndex >= 0) {
+        usedOld.add(oldIndex);
         usedNew.add(exactIndex);
-        pairs.push({ oldField, newField: newList[exactIndex], unchanged: true });
-      } else {
-        pairs.push({ oldField, newField: null, unchanged: false, oldIndex });
       }
     });
 
     /*
-     * 2.º para as restantes, tenta emparelhar pela estrutura.
+     * 2.º emparelha apenas ocorrências estruturalmente plausíveis.
+     * Isto reduz falsos "A -> B" quando, na realidade, uma ocorrência
+     * foi removida e outra diferente foi adicionada.
      */
-    pairs.forEach(function (pair) {
-      if (pair.newField || pair.unchanged) return;
+    oldList.forEach(function (oldField, oldIndex) {
+      if (usedOld.has(oldIndex)) return;
 
-      const structure = occurrenceKey(pair.oldField);
-      const structureIndex = newList.findIndex(function (newField, index) {
-        return !usedNew.has(index) && occurrenceKey(newField) === structure;
+      let bestIndex = -1;
+      let bestScore = -1;
+
+      newList.forEach(function (newField, newIndex) {
+        if (usedNew.has(newIndex)) return;
+
+        const score = marcFieldSimilarity(oldField, newField);
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestIndex = newIndex;
+        }
       });
 
-      if (structureIndex >= 0) {
-        usedNew.add(structureIndex);
-        pair.newField = newList[structureIndex];
+      if (bestIndex >= 0 && bestScore >= 4) {
+        usedOld.add(oldIndex);
+        usedNew.add(bestIndex);
+
+        pairs.push({
+          oldField: oldField,
+          newField: newList[bestIndex],
+          unchanged: false
+        });
       }
     });
 
     /*
-     * 3.º se ainda houver ocorrências sem par, emparelha pela ordem.
+     * 3.º ocorrências antigas sem par = removidas.
      */
-    pairs.forEach(function (pair) {
-      if (pair.newField || pair.unchanged) return;
+    oldList.forEach(function (oldField, oldIndex) {
+      if (usedOld.has(oldIndex)) return;
 
-      const fallbackIndex = newList.findIndex(function (_newField, index) {
-        return !usedNew.has(index);
+      pairs.push({
+        oldField: oldField,
+        newField: null,
+        unchanged: false
       });
-
-      if (fallbackIndex >= 0) {
-        usedNew.add(fallbackIndex);
-        pair.newField = newList[fallbackIndex];
-      }
     });
 
     /*
-     * 4.º campos atuais novos.
+     * 4.º ocorrências atuais sem par = adicionadas.
      */
-    newList.forEach(function (newField, index) {
-      if (!usedNew.has(index)) {
-        pairs.push({ oldField: null, newField, unchanged: false });
-      }
+    newList.forEach(function (newField, newIndex) {
+      if (usedNew.has(newIndex)) return;
+
+      pairs.push({
+        oldField: null,
+        newField: newField,
+        unchanged: false
+      });
     });
 
     return pairs;
@@ -914,7 +1398,12 @@
           field: marcFieldLabel(pair.oldField || pair.newField),
           code: tag,
           before: oldValue,
-          after: newValue
+          after: newValue,
+          change: pair.oldField && pair.newField
+            ? 'changed'
+            : pair.newField
+              ? 'added'
+              : 'removed'
         });
       });
     });
@@ -968,32 +1457,47 @@
      -------------------------------------------------------------- */
 
   function renderDiffTable(rows, options = {}) {
-    const leftTitle = options.leftTitle || 'Valor no log';
-    const rightTitle = options.rightTitle || 'Valor atual';
+    const leftTitle = options.leftTitle || 'Antes';
+    const rightTitle = options.rightTitle || 'Depois';
+    const emptyText =
+      options.emptyText ||
+      'Não se identificam alterações neste evento. Possivelmente o registo foi guardado sem edições relevantes.';
 
     if (!rows.length) {
       return `
-        <div class="klog-empty">
-          Não se identificam alterações nos dados de exemplar. Possivelmente guardado sem edições.
+        <div class="intranet-cataloguing-changes-empty">
+          ${esc(emptyText)}
         </div>
       `;
     }
 
+    const changeLabels = {
+      added: 'Adicionado',
+      removed: 'Removido',
+      changed: 'Alterado'
+    };
+
     let html = `
-      <div class="klog-diff-grid">
-        <div class="klog-diff-head">Campo</div>
-        <div class="klog-diff-head">${esc(leftTitle)}</div>
-        <div class="klog-diff-head">${esc(rightTitle)}</div>
+      <div class="intranet-cataloguing-changes-diff-grid">
+        <div class="intranet-cataloguing-changes-diff-head">Campo</div>
+        <div class="intranet-cataloguing-changes-diff-head">${esc(leftTitle)}</div>
+        <div class="intranet-cataloguing-changes-diff-head">${esc(rightTitle)}</div>
     `;
 
     rows.forEach(function (row) {
+      const change = row.change || 'changed';
+      const changeLabel = changeLabels[change] || changeLabels.changed;
+
       html += `
-        <div class="klog-diff-field">
-          <span class="klog-field-label">${esc(row.field)}</span>
-          ${row.code ? `<span class="klog-field-code">${esc(row.code)}</span>` : ''}
+        <div class="intranet-cataloguing-changes-diff-field">
+          <div>
+            <span class="intranet-cataloguing-changes-field-label">${esc(row.field)}</span>
+            ${row.code ? `<span class="intranet-cataloguing-changes-field-code">${esc(row.code)}</span>` : ''}
+          </div>
+          <span class="intranet-cataloguing-changes-change-badge intranet-cataloguing-changes-change-${esc(change)}">${esc(changeLabel)}</span>
         </div>
-        <div class="klog-diff-value">${esc(row.before)}</div>
-        <div class="klog-diff-value klog-diff-current">${esc(row.after)}</div>
+        <div class="intranet-cataloguing-changes-diff-value">${esc(row.before)}</div>
+        <div class="intranet-cataloguing-changes-diff-value intranet-cataloguing-changes-diff-current">${esc(row.after)}</div>
       `;
     });
 
@@ -1004,9 +1508,9 @@
 
   function renderLoading(title, subtitle) {
     return `
-      <div class="klog-card">
-        <div class="klog-title">${esc(title)}</div>
-        <div class="klog-loading">${esc(subtitle)}</div>
+      <div class="intranet-cataloguing-changes-card">
+        <div class="intranet-cataloguing-changes-title">${esc(title)}</div>
+        <div class="intranet-cataloguing-changes-loading">${esc(subtitle)}</div>
       </div>
     `;
   }
@@ -1037,27 +1541,85 @@
     const displayRaw = formatTechnicalRaw(raw);
 
     return `
-      <details class="klog-tech">
+      <details class="intranet-cataloguing-changes-tech">
         <summary>Ver dados técnicos originais</summary>
         <pre>${esc(displayRaw)}</pre>
       </details>
     `;
   }
 
-  function renderItemCard(raw, action, currentItem) {
-    const logSnapshot = parsePerlHash(raw);
-    const rows = buildItemRows(logSnapshot, currentItem);
+  function renderHistoryNote(history, fallbackText) {
+    if (history?.mode === 'history') {
+      if (history.previousLog || history.action === 'ADD' || history.action === 'DELETE') {
+        return `
+          <div class="intranet-cataloguing-changes-context-note">
+            Comparação reconstruída a partir do histórico de catalogação do Koha.
+          </div>
+        `;
+      }
+
+      return `
+        <div class="intranet-cataloguing-changes-mode-note">
+          Este é o primeiro estado histórico recuperável deste objeto. O valor anterior não está disponível.
+        </div>
+      `;
+    }
+
+    if (!fallbackText) return '';
+
+    return `
+      <div class="intranet-cataloguing-changes-mode-note">
+        ${esc(fallbackText)}
+      </div>
+    `;
+  }
+
+  function renderItemCard(raw, action, currentItem, history) {
+    const normalAction = normaliseAction(action);
+    const currentLogSnapshot = parsePerlHash(raw);
+
+    let beforeSnapshot = {};
+    let afterSnapshot = {};
+    let rows = [];
+    let fallbackText = '';
+
+    if (history?.mode === 'history') {
+      beforeSnapshot = parsePerlHash(history.beforeRaw);
+      afterSnapshot = parsePerlHash(history.afterRaw);
+
+      rows = buildItemHistoryRows(beforeSnapshot, afterSnapshot);
+    } else if (normalAction === 'ADD') {
+      afterSnapshot = currentLogSnapshot;
+      rows = buildItemHistoryRows({}, afterSnapshot);
+      fallbackText = 'Não foi necessário um estado anterior: este evento corresponde à criação do exemplar.';
+    } else if (normalAction === 'DELETE') {
+      beforeSnapshot = currentLogSnapshot;
+      rows = buildItemHistoryRows(beforeSnapshot, {});
+      fallbackText = 'O histórico completo não ficou acessível; o snapshot do evento de eliminação foi usado como estado anterior.';
+    } else if (currentItem) {
+      rows = buildItemRows(currentLogSnapshot, currentItem);
+      fallbackText = 'Não foi possível reconstruir o evento anterior através de action_logs. É apresentada, como fallback, a diferença entre o snapshot deste log e o estado atual do exemplar.';
+    } else {
+      fallbackText = 'Não foi possível reconstruir o estado anterior nem obter o estado atual do exemplar.';
+    }
 
     let title = 'Exemplar modificado';
-    if (/adicionar|add/i.test(action)) title = 'Exemplar adicionado';
-    if (/eliminar|delete/i.test(action)) title = 'Exemplar eliminado';
+    if (normalAction === 'ADD') title = 'Exemplar adicionado';
+    if (normalAction === 'DELETE') title = 'Exemplar eliminado';
+
+    const identitySnapshot =
+      Object.keys(afterSnapshot).length
+        ? afterSnapshot
+        : Object.keys(beforeSnapshot).length
+          ? beforeSnapshot
+          : currentLogSnapshot;
 
     const barcode =
-      logSnapshot.barcode ||
+      identitySnapshot.barcode ||
       valueFromCurrentItem(currentItem, 'barcode');
 
     const callnumber =
-      logSnapshot.itemcallnumber ||
+      identitySnapshot.itemcallnumber ||
       valueFromCurrentItem(currentItem, 'itemcallnumber');
 
     let subtitle = 'Evento registado no Koha.';
@@ -1070,102 +1632,140 @@
       subtitle = `Exemplar com cota ${esc(callnumber)}.`;
     }
 
-    let body = '';
-
-    if (/adicionar|add/i.test(action)) {
-      body = '';
-    } else if (!currentItem) {
-      body = `
-        <div class="klog-note">
-          Não foi possível obter o estado atual do exemplar. O log original continua disponível abaixo.
-        </div>
-      `;
-    } else {
-      body = renderDiffTable(rows);
-    }
-
     return `
-      <div class="klog-card">
-        <div class="klog-header">
-          <div class="klog-icon"><i class="fa-regular fa-bookmark" aria-hidden="true"></i></div>
+      <div class="intranet-cataloguing-changes-card">
+        <div class="intranet-cataloguing-changes-header">
+          <div class="intranet-cataloguing-changes-icon"><i class="fa-regular fa-bookmark" aria-hidden="true"></i></div>
           <div>
-            <div class="klog-title">${esc(title)}</div>
-            <div class="klog-subtitle">${subtitle}</div>
+            <div class="intranet-cataloguing-changes-title">${esc(title)}</div>
+            <div class="intranet-cataloguing-changes-subtitle">${subtitle}</div>
           </div>
         </div>
 
-        ${body}
+        ${renderHistoryNote(history, fallbackText)}
+        ${renderDiffTable(rows)}
 
         ${renderTechnical(raw)}
       </div>
     `;
   }
 
-  function renderBiblioCard(raw, action, objectText, biblionumber, currentBiblio) {
-    const logSnapshot = parsePerlHash(raw);
-    const oldMarcXml = extractMarcXmlFromRaw(raw);
-    const oldFields = marcXmlToFields(oldMarcXml);
+  function buildBiblioHistoryRows(beforeRaw, afterRaw) {
+    const beforeXml = extractMarcXmlFromRaw(beforeRaw);
+    const afterXml = extractMarcXmlFromRaw(afterRaw);
+    const beforeFields = marcXmlToFields(beforeXml);
+    const afterFields = marcXmlToFields(afterXml);
 
-    const currentFields = currentBiblio?.fields || null;
-    const currentObject = currentBiblio?.rawObject || null;
+    if (beforeFields || afterFields) {
+      return {
+        rows: buildMarcRows(beforeFields || [], afterFields || []),
+        mode: 'marc'
+      };
+    }
 
+    const beforeSnapshot = parsePerlHash(beforeRaw);
+    const afterSnapshot = parsePerlHash(afterRaw);
+
+    const keys = Array.from(
+      new Set([
+        ...Object.keys(beforeSnapshot),
+        ...Object.keys(afterSnapshot)
+      ])
+    );
+
+    const rows = [];
+
+    keys.forEach(function (key) {
+      const beforeValue = beforeSnapshot[key] ?? '';
+      const afterValue = afterSnapshot[key] ?? '';
+
+      if (comparable(beforeValue) === comparable(afterValue)) return;
+
+      rows.push({
+        field: humaniseTechnicalKey(key),
+        code: key,
+        before: displayValue(beforeValue),
+        after: displayValue(afterValue),
+        change: itemChangeType(beforeValue, afterValue)
+      });
+    });
+
+    return {
+      rows: dedupeRows(rows),
+      mode: rows.length ? 'basic' : ''
+    };
+  }
+
+  function renderBiblioCard(raw, action, objectText, biblionumber, currentBiblio, history) {
+    const normalAction = normaliseAction(action);
     let rows = [];
     let comparisonMode = '';
+    let fallbackText = '';
 
-    if (oldFields && currentFields) {
-      rows = buildMarcRows(oldFields, currentFields);
-      comparisonMode = 'marc';
-    } else if (currentObject) {
-      rows = buildBasicBiblioRows(logSnapshot, currentObject);
-      comparisonMode = rows.length ? 'basic' : '';
+    if (history?.mode === 'history') {
+      const built = buildBiblioHistoryRows(history.beforeRaw, history.afterRaw);
+      rows = built.rows;
+      comparisonMode = built.mode;
+    } else if (normalAction === 'ADD') {
+      const built = buildBiblioHistoryRows('', raw);
+      rows = built.rows;
+      comparisonMode = built.mode;
+      fallbackText = 'Não foi necessário um estado anterior: este evento corresponde à criação do registo bibliográfico.';
+    } else if (normalAction === 'DELETE') {
+      const built = buildBiblioHistoryRows(raw, '');
+      rows = built.rows;
+      comparisonMode = built.mode;
+      fallbackText = 'O histórico completo não ficou acessível; o snapshot do evento de eliminação foi usado como estado anterior.';
+    } else {
+      const logSnapshot = parsePerlHash(raw);
+      const oldMarcXml = extractMarcXmlFromRaw(raw);
+      const oldFields = marcXmlToFields(oldMarcXml);
+      const currentFields = currentBiblio?.fields || null;
+      const currentObject = currentBiblio?.rawObject || null;
+
+      if (oldFields && currentFields) {
+        rows = buildMarcRows(oldFields, currentFields);
+        comparisonMode = 'marc';
+      } else if (currentObject) {
+        rows = buildBasicBiblioRows(logSnapshot, currentObject);
+        comparisonMode = rows.length ? 'basic' : '';
+      }
+
+      fallbackText =
+        'Não foi possível reconstruir o evento anterior através de action_logs. É apresentada, como fallback, a diferença entre o snapshot deste log e o estado bibliográfico atual.';
     }
 
     let title = 'Registo bibliográfico modificado';
-    if (/adicionar|add/i.test(action)) title = 'Registo bibliográfico adicionado';
-    if (/eliminar|delete/i.test(action)) title = 'Registo bibliográfico eliminado';
+    if (normalAction === 'ADD') title = 'Registo bibliográfico adicionado';
+    if (normalAction === 'DELETE') title = 'Registo bibliográfico eliminado';
 
     const subtitle = biblionumber
       ? `Registo bibliográfico ${esc(biblionumber)}.`
       : esc(objectText || 'Registo bibliográfico');
 
-    let body = '';
+    let modeNote = '';
 
-    if (/adicionar|add/i.test(action)) {
-      body = '';
-    } else if (!currentBiblio) {
-      body = `
-        <div class="klog-note">
-          O registo bibliográfico foi reconhecido, mas não foi possível obter o seu estado atual através da API/exportação do Koha.
-        </div>
-      `;
-    } else if (comparisonMode === 'marc') {
-      body = renderDiffTable(rows);
-    } else if (comparisonMode === 'basic') {
-      body = `
-        <div class="klog-mode-note">
-          O log não contém um registo MARC completo. Foi feita uma comparação dos campos bibliográficos simples disponíveis.
-        </div>
-        ${renderDiffTable(rows)}
-      `;
-    } else {
-      body = `
-        <div class="klog-empty">
-          Não se identificam alterações no registo MARC. Possivelmente guardado sem edições.
+    if (comparisonMode === 'basic') {
+      modeNote = `
+        <div class="intranet-cataloguing-changes-mode-note">
+          Não foi possível obter MARC completo para ambos os estados. Foram comparados todos os campos simples disponíveis no log.
         </div>
       `;
     }
 
     return `
-      <div class="klog-card">
-        <div class="klog-header">
-          <div class="klog-icon"><i class="fa-regular fa-file" aria-hidden="true"></i></div>
+      <div class="intranet-cataloguing-changes-card">
+        <div class="intranet-cataloguing-changes-header">
+          <div class="intranet-cataloguing-changes-icon"><i class="fa-regular fa-file" aria-hidden="true"></i></div>
           <div>
-            <div class="klog-title">${esc(title)}</div>
-            <div class="klog-subtitle">${subtitle}</div>
+            <div class="intranet-cataloguing-changes-title">${esc(title)}</div>
+            <div class="intranet-cataloguing-changes-subtitle">${subtitle}</div>
           </div>
         </div>
 
-        ${body}
+        ${renderHistoryNote(history, fallbackText)}
+        ${modeNote}
+        ${renderDiffTable(rows)}
 
         ${renderTechnical(raw)}
       </div>
@@ -1174,16 +1774,16 @@
 
   function renderGenericCard(raw, action, objectText) {
     return `
-      <div class="klog-card">
-        <div class="klog-header">
-          <div class="klog-icon"><i class="fa-regular fa-file" aria-hidden="true"></i></div>
+      <div class="intranet-cataloguing-changes-card">
+        <div class="intranet-cataloguing-changes-header">
+          <div class="intranet-cataloguing-changes-icon"><i class="fa-regular fa-file" aria-hidden="true"></i></div>
           <div>
-            <div class="klog-title">${esc(objectText || 'Registo')}</div>
-            <div class="klog-subtitle">Evento de ${esc(String(action || '').toLowerCase())} registado no Koha.</div>
+            <div class="intranet-cataloguing-changes-title">${esc(objectText || 'Registo')}</div>
+            <div class="intranet-cataloguing-changes-subtitle">Evento de ${esc(String(action || '').toLowerCase())} registado no Koha.</div>
           </div>
         </div>
 
-        <div class="klog-empty">
+        <div class="intranet-cataloguing-changes-empty">
           Este tipo de log ainda não contém informação suficiente para uma interpretação estruturada.
         </div>
 
@@ -1257,13 +1857,14 @@
      -------------------------------------------------------------- */
 
   async function enhanceRow(row) {
-    if (row.data('klog-diff')) return;
+    if (row.data('intranet-cataloguing-changes-diff')) return;
 
     naturaliseInterface(row);
 
     const cells = row.find('td');
     if (cells.length < 6) return;
 
+    const dateText = cells.eq(0).text().trim();
     const moduleText = cells.eq(2).text().trim();
     const action = cells.eq(3).text().trim();
     const objectCell = cells.eq(4);
@@ -1274,23 +1875,35 @@
     const raw = originalRaw.trim();
     if (!raw) return;
 
-    row.data('klog-diff', true);
+    row.data('intranet-cataloguing-changes-diff', true);
 
     const type = detectLogType(raw, objectCell, moduleText);
+    const actionId = extractActionIdFromRow(row);
 
     if (type === 'item') {
       infoCell.html(
         renderLoading(
           'A interpretar alteração de exemplar...',
-          'A obter o estado atual do exemplar.'
+          'A reconstruir o estado anterior e posterior deste evento.'
         )
       );
 
       const itemnumber = extractItemnumber(raw, objectCell);
-      const currentItem = await fetchCurrentItem(itemnumber);
+
+      const [history, currentItem] = await Promise.all([
+        getEventHistory({
+          objectId: itemnumber,
+          type: 'item',
+          action: action,
+          raw: originalRaw,
+          dateText: dateText,
+          actionId: actionId
+        }),
+        fetchCurrentItem(itemnumber)
+      ]);
 
       infoCell.html(
-        renderItemCard(originalRaw, action, currentItem)
+        renderItemCard(originalRaw, action, currentItem, history)
       );
 
       return;
@@ -1300,12 +1913,23 @@
       infoCell.html(
         renderLoading(
           'A interpretar alteração bibliográfica...',
-          'A obter o registo bibliográfico atual.'
+          'A reconstruir o estado anterior e posterior deste evento.'
         )
       );
 
       const biblionumber = extractBiblionumber(raw, objectCell);
-      const currentBiblio = await fetchCurrentBiblio(biblionumber);
+
+      const [history, currentBiblio] = await Promise.all([
+        getEventHistory({
+          objectId: biblionumber,
+          type: 'biblio',
+          action: action,
+          raw: originalRaw,
+          dateText: dateText,
+          actionId: actionId
+        }),
+        fetchCurrentBiblio(biblionumber)
+      ]);
 
       infoCell.html(
         renderBiblioCard(
@@ -1313,7 +1937,8 @@
           action,
           objectText,
           biblionumber,
-          currentBiblio
+          currentBiblio,
+          history
         )
       );
 
@@ -1344,10 +1969,10 @@
      -------------------------------------------------------------- */
 
   function injectCss() {
-    if ($('#klog-diff-css').length) return;
+    if ($('#intranet-cataloguing-changes-diff-css').length) return;
 
     $('head').append(`
-      <style id="klog-diff-css">
+      <style id="intranet-cataloguing-changes-diff-css">
         table td:nth-child(6) {
           width: 760px;
           min-width: 760px;
@@ -1357,7 +1982,7 @@
           overflow: hidden;
         }
 
-        .klog-card {
+        .intranet-cataloguing-changes-card {
           background: #ffffff;
           border: 1px solid #d7dde3;
           border-radius: 7px;
@@ -1372,14 +1997,14 @@
           overflow: hidden;
         }
 
-        .klog-header {
+        .intranet-cataloguing-changes-header {
           display: flex;
           align-items: flex-start;
           gap: 7px;
           margin-bottom: 6px;
         }
 
-        .klog-icon {
+        .intranet-cataloguing-changes-icon {
           display: inline-flex;
           align-items: center;
           justify-content: center;
@@ -1392,24 +2017,24 @@
           line-height: 1;
         }
 
-        .klog-title {
+        .intranet-cataloguing-changes-title {
           font-weight: 700;
           font-size: 13px;
           color: #111827;
           margin-bottom: 2px;
         }
 
-        .klog-subtitle,
-        .klog-loading,
-        .klog-empty,
-        .klog-note,
-        .klog-mode-note,
-        .klog-context-note {
+        .intranet-cataloguing-changes-subtitle,
+        .intranet-cataloguing-changes-loading,
+        .intranet-cataloguing-changes-empty,
+        .intranet-cataloguing-changes-note,
+        .intranet-cataloguing-changes-mode-note,
+        .intranet-cataloguing-changes-context-note {
           color: #4b5563;
           font-size: 12px;
         }
 
-        .klog-diff-grid {
+        .intranet-cataloguing-changes-diff-grid {
           display: grid;
           grid-template-columns: minmax(145px, 28%) minmax(0, 36%) minmax(0, 36%);
           margin-top: 5px;
@@ -1419,43 +2044,43 @@
           line-height: 1.2;
         }
 
-        .klog-diff-head,
-        .klog-diff-field,
-        .klog-diff-value {
+        .intranet-cataloguing-changes-diff-head,
+        .intranet-cataloguing-changes-diff-field,
+        .intranet-cataloguing-changes-diff-value {
           min-width: 0;
           padding: 4px 6px;
           border-right: 1px solid #d9dee3;
           border-bottom: 1px solid #d9dee3;
         }
 
-        .klog-diff-head {
+        .intranet-cataloguing-changes-diff-head {
           background: #f3f5f7;
           color: #374151;
           font-weight: 700;
         }
 
-        .klog-diff-field {
+        .intranet-cataloguing-changes-diff-field {
           background: #fafafa;
           border-left: 3px solid #d99a00;
         }
 
-        .klog-diff-value {
+        .intranet-cataloguing-changes-diff-value {
           background: #fff;
           white-space: pre-wrap;
           overflow-wrap: anywhere;
         }
 
-        .klog-diff-current {
+        .intranet-cataloguing-changes-diff-current {
           background: #fff8e8;
         }
 
 
-        .klog-field-label {
+        .intranet-cataloguing-changes-field-label {
           display: inline;
           font-weight: 600;
         }
 
-        .klog-field-code {
+        .intranet-cataloguing-changes-field-code {
           display: inline;
           margin-left: 5px;
           color: #8a949e;
@@ -1464,8 +2089,39 @@
           font-weight: 400;
         }
 
-        .klog-note,
-        .klog-mode-note {
+        .intranet-cataloguing-changes-change-badge {
+          display: inline-block;
+          margin-top: 3px;
+          padding: 1px 5px;
+          border-radius: 999px;
+          font-size: 9px;
+          font-weight: 700;
+          line-height: 1.35;
+          border: 1px solid #d6dbe1;
+          background: #f4f6f8;
+          color: #4b5563;
+        }
+
+        .intranet-cataloguing-changes-change-added {
+          background: #eef8f1;
+          border-color: #bddfc6;
+          color: #286437;
+        }
+
+        .intranet-cataloguing-changes-change-removed {
+          background: #fff1f0;
+          border-color: #efc2bf;
+          color: #8b3430;
+        }
+
+        .intranet-cataloguing-changes-change-changed {
+          background: #fff8e8;
+          border-color: #ead29c;
+          color: #77570b;
+        }
+
+        .intranet-cataloguing-changes-note,
+        .intranet-cataloguing-changes-mode-note {
           margin-top: 8px;
           padding: 7px 8px;
           background: #fff8e8;
@@ -1473,45 +2129,45 @@
           border-radius: 4px;
         }
 
-        .klog-mode-note {
+        .intranet-cataloguing-changes-mode-note {
           background: #f5f8fb;
           border-color: #d8e1ea;
         }
 
-        .klog-empty {
+        .intranet-cataloguing-changes-empty {
           padding: 5px 6px;
           background: #f8fafc;
           border: 1px solid #e2e8f0;
           border-radius: 5px;
         }
 
-        .klog-context-note {
+        .intranet-cataloguing-changes-context-note {
           margin-top: 5px;
           color: #6b7280;
           font-size: 10.5px;
           line-height: 1.35;
         }
 
-        .klog-tech {
+        .intranet-cataloguing-changes-tech {
           margin-top: 6px;
           border-top: 1px solid #eef0f2;
           padding-top: 5px;
         }
 
-        .klog-tech summary {
+        .intranet-cataloguing-changes-tech summary {
           cursor: pointer;
           color: #006699;
           font-size: 11px;
           font-weight: 600;
         }
 
-        .klog-tech {
+        .intranet-cataloguing-changes-tech {
           max-width: 100%;
           min-width: 0;
           overflow: hidden;
         }
 
-        .klog-tech pre {
+        .intranet-cataloguing-changes-tech pre {
           margin-top: 6px;
           background: #f8fafc;
           border: 1px solid #e2e8f0;
